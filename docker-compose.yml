@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: kakapo_db
+    environment:
+      POSTGRES_USER: kakapo
+      POSTGRES_PASSWORD: kakapo
+      POSTGRES_DB: kakapo
+    ports:
+      - "5432:5432"
+    volumes:
+      - kakapo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kakapo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    container_name: kakapo_api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://kakapo:kakapo@db:5432/kakapo
+      UPLOAD_DIR: /app/uploads
+      MAX_UPLOAD_SIZE_MB: 50
+      APP_ENV: development
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+      - kakapo_uploads:/app/uploads
+
+volumes:
+  kakapo_pgdata:
+  kakapo_uploads:
