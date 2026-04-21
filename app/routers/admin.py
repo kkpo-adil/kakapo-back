@@ -31,7 +31,7 @@ def seed(db: Session = Depends(get_db)):
         kpt = KPT(id=uuid.uuid4(), kpt_id=f"KPT-{pub_short}-v1-{suffix}", publication_id=pub.id, content_hash=pub.file_hash, version=1, status="active", metadata_json={"doi": pub.doi, "source": pub.source, "title": pub.title, "orcid_authors": [], "dataset_hashes": [], "ror_institution": None, "trust_fields": {"has_doi": True, "has_abstract": True, "has_authors": True, "has_institution": True, "has_dataset": False}})
         db.add(kpt)
         db.flush()
-        score = TrustScore(id=uuid.uuid4(), publication_id=pub.id, kpt_id=kpt.id, score=82, source_score=85, completeness_score=90, freshness_score=75, citation_score=80, dataset_score=60)
+        score = TrustScore(id=uuid.uuid4(), publication_id=pub.id, score=0.82, source_score=0.85, completeness_score=0.90, freshness_score=0.75, citation_score=0.80, dataset_score=0.60)
         db.add(score)
         created.append(pub.title)
     db.commit()
