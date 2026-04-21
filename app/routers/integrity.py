@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.kpt import KPT, KPTStatus
+from app.models.kpt import KPT
 from app.models.integrity_check_log import IntegrityCheckLog, IntegrityResult
 from app.schemas.integrity import IntegrityVerifyRequest, IntegrityVerifyResponse
 from datetime import datetime, timezone
@@ -15,7 +15,7 @@ def verify_integrity(payload: IntegrityVerifyRequest, request: Request, db: Sess
 
     kpt = db.query(KPT).filter(
         KPT.doi == payload.doi,
-        KPT.status.in_([KPTStatus.active, KPTStatus.active_preprint]),
+        KPT.status.in_(["active", "active_preprint"]),
     ).first()
 
     if kpt is None:
