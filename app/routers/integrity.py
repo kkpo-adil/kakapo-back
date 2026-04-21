@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.kpt import KPT
+from app.models.publication import Publication
 from app.models.integrity_check_log import IntegrityCheckLog, IntegrityResult
 from app.schemas.integrity import IntegrityVerifyRequest, IntegrityVerifyResponse
 from datetime import datetime, timezone
@@ -13,10 +14,13 @@ router = APIRouter(prefix="/integrity", tags=["Integrity"])
 def verify_integrity(payload: IntegrityVerifyRequest, request: Request, db: Session = Depends(get_db)):
     ip = payload.ip_address or request.client.host
 
-    kpt = db.query(KPT).filter(
-        KPT.doi == payload.doi,
-        KPT.status.in_(["active", "active_preprint"]),
-    ).first()
+    publication = db.query(Publication).filter(Publication.doi == payload.doi).first()
+    kpt = None
+    if publication:
+        kpt = db.query(KPT).filter(
+            KPT.publication_id == publication.id,
+            KPT.status.in_(["active", "active_preprint", "active"]),
+        ).first()
 
     if kpt is None:
         log = IntegrityCheckLog(
