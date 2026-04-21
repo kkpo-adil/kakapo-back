@@ -36,5 +36,4 @@ class Publisher(Base):
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    publications: Mapped[list["Publication"]] = relationship("Publication", back_populates="publisher")
     balance: Mapped["PublisherBalance"] = relationship("PublisherBalance", back_populates="publisher", uselist=False)
