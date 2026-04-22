@@ -8,11 +8,11 @@ depends_on = None
 
 def upgrade():
     op.execute("""
-        CREATE UNIQUE INDEX uq_kpt_doi_active
-        ON kpts (doi)
-        WHERE status IN ('active', 'active_preprint')
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_publication_doi_active
+        ON publications (doi)
+        WHERE doi IS NOT NULL
     """)
 
 
 def downgrade():
-    op.execute("DROP INDEX IF EXISTS uq_kpt_doi_active")
+    op.execute("DROP INDEX IF EXISTS uq_publication_doi_active")
