@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from app.auth import require_api_key
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.publisher import Publisher
@@ -11,7 +12,7 @@ router = APIRouter(prefix="/publishers", tags=["Publishers"])
 
 
 @router.post("", response_model=PublisherRead, status_code=status.HTTP_201_CREATED)
-def create_publisher(payload: PublisherCreate, db: Session = Depends(get_db)):
+def create_publisher(payload: PublisherCreate, db: Session = Depends(get_db), _: str = Depends(require_api_key)):
     existing = db.query(Publisher).filter(Publisher.slug == payload.slug).first()
     if existing:
         raise HTTPException(status_code=409, detail="Slug already exists")
@@ -50,7 +51,7 @@ def get_publisher(publisher_id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @router.patch("/{publisher_id}", response_model=PublisherRead)
-def update_publisher(publisher_id: uuid.UUID, payload: PublisherUpdate, db: Session = Depends(get_db)):
+def update_publisher(publisher_id: uuid.UUID, payload: PublisherUpdate, db: Session = Depends(get_db), _: str = Depends(require_api_key)):
     publisher = db.query(Publisher).filter(Publisher.id == publisher_id).first()
     if not publisher:
         raise HTTPException(status_code=404, detail="Publisher not found")
