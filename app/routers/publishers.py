@@ -6,7 +6,7 @@ from app.models.publisher import Publisher
 from app.models.publisher_balance import PublisherBalance
 from app.schemas.publisher import PublisherCreate, PublisherUpdate, PublisherRead, PublisherBalanceRead
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/publishers", tags=["Publishers"])
 
@@ -23,8 +23,8 @@ def create_publisher(payload: PublisherCreate, db: Session = Depends(get_db), _:
         contract_type=payload.contract_type,
         revenue_share_pct=payload.revenue_share_pct,
         kpt_unit_cost=payload.kpt_unit_cost,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     )
     balance = PublisherBalance(
         id=uuid.uuid4(),
