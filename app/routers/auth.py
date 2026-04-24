@@ -9,12 +9,13 @@ from app.database import get_db
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
-ORCID_CLIENT_ID = os.environ.get("ORCID_CLIENT_ID", "")
-ORCID_CLIENT_SECRET = os.environ.get("ORCID_CLIENT_SECRET", "")
-JWT_SECRET = os.environ.get("JWT_SECRET", "")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://kakapo-front.vercel.app")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_DAYS = 30
+
+def get_orcid_client_id(): return os.environ.get("ORCID_CLIENT_ID", "")
+def get_orcid_client_secret(): return os.environ.get("ORCID_CLIENT_SECRET", "")
+def get_jwt_secret(): return os.environ.get("JWT_SECRET", "")
+def get_frontend_url(): return os.environ.get("FRONTEND_URL", "https://kakapo-front.vercel.app")
 
 ORCID_AUTH_URL = "https://orcid.org/oauth/authorize"
 ORCID_TOKEN_URL = "https://orcid.org/oauth/token"
@@ -29,10 +30,10 @@ def create_jwt(data: dict) -> str:
         "exp": datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS),
         "iat": datetime.now(timezone.utc),
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 def decode_jwt(token: str) -> dict:
-    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    return jwt.decode(token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
 
 def get_current_user(request: Request) -> dict:
     auth = request.headers.get("Authorization", "")
@@ -48,6 +49,7 @@ def get_current_user(request: Request) -> dict:
 def orcid_login(request: Request):
     redirect_uri = get_redirect_uri(request)
     from urllib.parse import urlencode
+    ORCID_CLIENT_ID = get_orcid_client_id()
     params = {
         "client_id": ORCID_CLIENT_ID,
         "response_type": "code",
@@ -63,8 +65,8 @@ async def orcid_callback(code: str, request: Request, db: Session = Depends(get_
         token_response = await client.post(
             ORCID_TOKEN_URL,
             data={
-                "client_id": ORCID_CLIENT_ID,
-                "client_secret": ORCID_CLIENT_SECRET,
+                "client_id": get_orcid_client_id(),
+                "client_secret": get_orcid_client_secret(),
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": redirect_uri,
@@ -103,7 +105,7 @@ async def orcid_callback(code: str, request: Request, db: Session = Depends(get_
         "name": name,
         "role": "scientist",
     })
-    return RedirectResponse(f"{FRONTEND_URL}/auth/callback?token={jwt_token}")
+    return RedirectResponse(f"{get_frontend_url()}/auth/callback?token={jwt_token}")
 
 @router.get("/me")
 def get_me(request: Request, db: Session = Depends(get_db)):
@@ -119,8 +121,8 @@ def get_me(request: Request, db: Session = Depends(get_db)):
 @router.get("/debug")
 def debug_env():
     return {
-        "client_id_set": bool(ORCID_CLIENT_ID),
-        "client_id_length": len(ORCID_CLIENT_ID),
-        "secret_set": bool(ORCID_CLIENT_SECRET),
-        "jwt_set": bool(JWT_SECRET),
+        "client_id_set": bool(get_orcid_client_id()),
+        "client_id_length": len(get_orcid_client_id()),
+        "secret_set": bool(get_orcid_client_secret()),
+        "jwt_set": bool(get_jwt_secret()),
     }
