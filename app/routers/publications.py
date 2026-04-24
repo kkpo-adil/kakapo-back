@@ -205,3 +205,13 @@ def get_publication(
             detail=f"Publication {publication_id} not found",
         )
     return publication
+
+
+@router.get("/crossref/{doi:path}", summary="Fetch metadata from CrossRef by DOI")
+async def get_crossref_metadata(doi: str):
+    from app.services.crossref_service import fetch_doi_metadata
+    data = await fetch_doi_metadata(doi)
+    if not data:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="DOI not found on CrossRef")
+    return data
