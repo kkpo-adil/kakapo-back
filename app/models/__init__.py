@@ -13,6 +13,9 @@ __all__ = [
     "Publisher", "PublisherStatus", "ContractType",
     "PublisherBalance",
     "IntegrityCheckLog", "IntegrityResult",
+    "ScientistProfile",
+    "AIClientProfile", "PlanType",
+    "QueryLog", "QueryResult",
 ]
 
 from app.models.scientist_profile import ScientistProfile

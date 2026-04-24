@@ -1,10 +1,9 @@
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from app.database import init_db
-from app.routers import publications, kpt, trust
+from app.middleware import track_ai_client_usage
+from app.routers import publications, kpt, trust, relations, publishers, integrity, auth, ai_clients
 
 
 @asynccontextmanager
@@ -15,18 +14,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="KAKAPO",
-    description=(
-        "Scientific reliability infrastructure. "
-        "Certify, link and score scientific publications via KPT and Trust Engine."
-    ),
+    description="Scientific reliability infrastructure. Certify, link and score scientific publications via KPT and Trust Engine.",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
 )
 
-from app.middleware import track_ai_client_usage
-app.middleware('http')(track_ai_client_usage)
+app.middleware("http")(track_ai_client_usage)
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +34,11 @@ app.add_middleware(
 app.include_router(publications.router)
 app.include_router(kpt.router)
 app.include_router(trust.router)
+app.include_router(relations.router)
+app.include_router(publishers.router)
+app.include_router(integrity.router)
+app.include_router(auth.router)
+app.include_router(ai_clients.router)
 
 
 @app.get("/", tags=["Health"])
@@ -49,16 +49,3 @@ def root():
 @app.get("/health", tags=["Health"])
 def health():
     return {"status": "ok"}
-
-from app.routers import relations
-app.include_router(relations.router)
-
-from app.routers import publishers, integrity
-app.include_router(publishers.router)
-app.include_router(integrity.router)
-
-from app.routers import auth
-app.include_router(auth.router)
-
-from app.routers import ai_clients
-app.include_router(ai_clients.router)
