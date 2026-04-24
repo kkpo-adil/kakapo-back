@@ -50,6 +50,7 @@ def orcid_login(request: Request):
     redirect_uri = get_redirect_uri(request)
     from urllib.parse import urlencode
     ORCID_CLIENT_ID = get_orcid_client_id()
+    ORCID_CLIENT_ID = get_orcid_client_id()
     params = {
         "client_id": ORCID_CLIENT_ID,
         "response_type": "code",
