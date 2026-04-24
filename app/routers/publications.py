@@ -209,9 +209,26 @@ def get_publication(
 
 @router.get("/crossref/{doi:path}", summary="Fetch metadata from CrossRef by DOI")
 async def get_crossref_metadata(doi: str):
-    from app.services.crossref_service import fetch_doi_metadata
-    data = await fetch_doi_metadata(doi)
-    if not data:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="DOI not found on CrossRef")
-    return data
+    import httpx
+    url = f"https://api.crossref.org/works/{doi}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(url, headers={"User-Agent": "KAKAPO/1.0 (mailto:contact@kakapo.io)"})
+            if r.status_code != 200:
+                raise HTTPException(status_code=404, detail="DOI not found on CrossRef")
+            work = r.json().get("message", {})
+            title = work.get("title", [""])[0]
+            abstract = work.get("abstract", "")
+            authors = [{"name": f"{a.get('given', '')} {a.get('family', '')}".strip()} for a in work.get("author", [])]
+            journal = (work.get("container-title") or [""])[0]
+            institution = (work.get("author") or [{}])[0].get("affiliation", [{}])[0].get("name", "") if work.get("author") else 
+""
+            parts = (work.get("published") or {}).get("date-parts", [[None]])[0]
+            published_at = f"{parts[0]:04d}-{(parts[1] if len(parts)>1 else 1):02d}-01" if parts and parts[0] else None
+            return {"title": title, "abstract": abstract, "authors": authors, "journal": journal, "institution": institution, 
+"published_at": published_at, "doi": doi}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
