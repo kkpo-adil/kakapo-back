@@ -47,7 +47,7 @@ class AIClientProfile(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     organization_name: Mapped[str] = mapped_column(String(255), nullable=False)
     contact_email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
-    api_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    api_key: Mapped[str] = mapped_column(String(72), nullable=False, unique=True, index=True)
     plan_type: Mapped[PlanType] = mapped_column(SAEnum(PlanType, name="plan_type"), default=PlanType.compliance_starter, nullable=False)
     monthly_quota: Mapped[int] = mapped_column(Integer, default=100_000, nullable=False)
     quota_used_current_month: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
