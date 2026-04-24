@@ -3,6 +3,7 @@ import httpx
 from datetime import datetime, timezone, timedelta
 from jose import jwt
 from fastapi import APIRouter, HTTPException, Depends, Request
+from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -118,3 +119,40 @@ def get_me(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Profile not found")
     return profile
 
+
+
+class ProfileUpdate(BaseModel):
+    display_name: str | None = None
+    email: str | None = None
+    bio: str | None = None
+    primary_domain: str | None = None
+    affiliation_raw: str | None = None
+    institution_ror: str | None = None
+
+
+@router.patch("/me", response_model=dict)
+def update_me(payload: ProfileUpdate, request: Request, db: Session = Depends(get_db)):
+    jwt_payload = get_current_user(request)
+    from app.models.scientist_profile import ScientistProfile
+    profile = db.query(ScientistProfile).filter(
+        ScientistProfile.id == jwt_payload["sub"]
+    ).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    for field, value in payload.model_dump(exclude_none=True).items():
+        setattr(profile, field, value)
+    db.commit()
+    db.refresh(profile)
+    return {
+        "id": str(profile.id),
+        "display_name": profile.display_name,
+        "email": profile.email,
+        "bio": profile.bio,
+        "primary_domain": profile.primary_domain,
+        "affiliation_raw": profile.affiliation_raw,
+        "institution_ror": profile.institution_ror,
+        "orcid_id": profile.orcid_id,
+        "is_verified": profile.is_verified,
+        "created_at": profile.created_at.isoformat(),
+        "updated_at": profile.updated_at.isoformat(),
+    }
