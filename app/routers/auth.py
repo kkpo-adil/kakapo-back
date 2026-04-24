@@ -21,7 +21,7 @@ ORCID_AUTH_URL = "https://orcid.org/oauth/authorize"
 ORCID_TOKEN_URL = "https://orcid.org/oauth/token"
 
 def get_redirect_uri(request: Request) -> str:
-    base = str(request.base_url).rstrip("/")
+    base = str(request.base_url).rstrip("/").replace("http://", "https://")
     return f"{base}/auth/orcid/callback"
 
 def create_jwt(data: dict) -> str:
