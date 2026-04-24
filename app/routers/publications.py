@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 import aiofiles
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,7 @@ from app.config import settings
 from app.models.publication import Publication
 from app.schemas.publication import PublicationRead, PublicationList
 from app.services.hash_service import compute_sha256_file
+from app.services.crossref_service import fetch_doi_metadata
 from app.services.kpt_service import issue_kpt
 from app.services.trust_engine import compute_trust_score
 from app.schemas.kpt import KPTIssueRequest
@@ -98,6 +100,25 @@ async def upload_publication(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="submitted_at must be a valid ISO 8601 datetime",
             )
+
+
+    # --- CrossRef enrichment ---
+    if doi:
+        try:
+            loop = asyncio.get_event_loop()
+            crossref_data = loop.run_until_complete(fetch_doi_metadata(doi))
+            if crossref_data:
+                if not title or title == doi:
+                    title = crossref_data.get("title", title)
+                if not abstract:
+                    abstract = crossref_data.get("abstract", "")
+                if not authors_raw and crossref_data.get("authors"):
+                    import json as _json
+                    authors_raw = _json.dumps(crossref_data["authors"])
+                if not institution_raw:
+                    institution_raw = crossref_data.get("institution", "")
+        except Exception:
+            pass
 
     # --- Persist file ---
     pub_id = uuid.uuid4()
