@@ -25,6 +25,9 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+from app.middleware import track_ai_client_usage
+app.middleware('http')(track_ai_client_usage)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
