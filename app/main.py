@@ -56,3 +56,6 @@ app.include_router(integrity.router)
 
 from app.routers import auth
 app.include_router(auth.router)
+
+from app.routers import ai_clients
+app.include_router(ai_clients.router)
