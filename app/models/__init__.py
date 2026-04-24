@@ -14,3 +14,5 @@ __all__ = [
     "PublisherBalance",
     "IntegrityCheckLog", "IntegrityResult",
 ]
+
+from app.models.scientist_profile import ScientistProfile

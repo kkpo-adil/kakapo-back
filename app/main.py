@@ -53,3 +53,6 @@ app.include_router(relations.router)
 from app.routers import publishers, integrity
 app.include_router(publishers.router)
 app.include_router(integrity.router)
+
+from app.routers import auth
+app.include_router(auth.router)
