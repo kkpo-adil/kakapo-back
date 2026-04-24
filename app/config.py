@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from pathlib import Path
+import os
 
 
 class Settings(BaseSettings):
@@ -18,7 +19,10 @@ class Settings(BaseSettings):
     def max_upload_bytes(self) -> int:
         return self.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
-    model_config = {"env_file": ".env"}
+    model_config = {
+        "env_file": ".env" if os.path.exists(".env") else None,
+        "env_file_encoding": "utf-8",
+    }
 
 
 settings = Settings()
