@@ -115,3 +115,12 @@ def get_me(request: Request, db: Session = Depends(get_db)):
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
     return profile
+
+@router.get("/debug")
+def debug_env():
+    return {
+        "client_id_set": bool(ORCID_CLIENT_ID),
+        "client_id_length": len(ORCID_CLIENT_ID),
+        "secret_set": bool(ORCID_CLIENT_SECRET),
+        "jwt_set": bool(JWT_SECRET),
+    }
