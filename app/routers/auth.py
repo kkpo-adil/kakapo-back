@@ -118,14 +118,3 @@ def get_me(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Profile not found")
     return profile
 
-@router.get("/debug")
-def debug_env():
-    import os
-    all_keys = [k for k in os.environ.keys() if "ORCID" in k or "JWT" in k or "KAKAPO" in k]
-    return {
-        "client_id_set": bool(get_orcid_client_id()),
-        "client_id_length": len(get_orcid_client_id()),
-        "secret_set": bool(get_orcid_client_secret()),
-        "jwt_set": bool(get_jwt_secret()),
-        "matching_env_keys": all_keys,
-    }
