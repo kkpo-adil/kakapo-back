@@ -221,7 +221,9 @@ async def get_crossref_metadata(doi: str):
             abstract = work.get("abstract", "")
             authors = [{"name": f"{a.get('given', '')} {a.get('family', '')}".strip()} for a in work.get("author", [])]
             journal = (work.get("container-title") or [""])[0]
-            institution = (work.get("author") or [{}])[0].get("affiliation", [{}])[0].get("name", "") if work.get("author") else ""
+            authors_list = work.get("author") or []
+            affil = authors_list[0].get("affiliation", []) if authors_list else []
+            institution = affil[0].get("name", "") if affil else ""
             parts = (work.get("published") or {}).get("date-parts", [[None]])[0]
             published_at = f"{parts[0]:04d}-{(parts[1] if len(parts)>1 else 1):02d}-01" if parts and parts[0] else None
             return {"title": title, "abstract": abstract, "authors": authors, "journal": journal, "institution": institution, "published_at": published_at, "doi": doi}
