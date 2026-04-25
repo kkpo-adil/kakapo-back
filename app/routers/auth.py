@@ -156,3 +156,86 @@ def update_me(payload: ProfileUpdate, request: Request, db: Session = Depends(ge
         "created_at": profile.created_at.isoformat(),
         "updated_at": profile.updated_at.isoformat(),
     }
+
+
+@router.get("/dashboard")
+def get_dashboard(request: Request, db: Session = Depends(get_db)):
+    from app.routers.auth import get_current_user
+    from app.models.scientist_profile import ScientistProfile
+    from app.models.publication import Publication
+    from app.models.kpt import KPT
+    from app.models.integrity_check_log import IntegrityCheckLog
+    from app.models.query_log import QueryLog
+    from app.services.kpt_quota_service import KPTQuotaService
+    from sqlalchemy import func
+
+    payload = get_current_user(request)
+    profile = db.query(ScientistProfile).filter(ScientistProfile.id == payload["sub"]).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    publications = db.query(Publication).filter(
+        Publication.doi.in_(
+            db.query(KPT.doi).filter(KPT.status == "active")
+        )
+    ).all()
+
+    pub_ids = [str(p.id) for p in publications]
+
+    kpts = db.query(KPT).filter(KPT.publication_id.in_(pub_ids)).all()
+    kpt_ids = [k.id for k in kpts]
+
+    total_verifications = db.query(IntegrityCheckLog).filter(
+        IntegrityCheckLog.kpt_id.in_(kpt_ids)
+    ).count()
+
+    total_ai_queries = db.query(QueryLog).filter(
+        QueryLog.doi_queried.in_([k.doi for k in kpts])
+    ).count()
+
+    quota_service = KPTQuotaService()
+    quota_status = quota_service.get_status(profile)
+
+    pub_stats = []
+    for pub in publications:
+        pub_kpts = [k for k in kpts if str(k.publication_id) == str(pub.id)]
+        active_kpt = next((k for k in pub_kpts if k.status == "active"), None)
+        kpt_ids_for_pub = [k.id for k in pub_kpts]
+        verif_count = db.query(IntegrityCheckLog).filter(
+            IntegrityCheckLog.kpt_id.in_(kpt_ids_for_pub)
+        ).count()
+        ai_count = db.query(QueryLog).filter(
+            QueryLog.doi_queried == pub.doi
+        ).count() if pub.doi else 0
+        pub_stats.append({
+            "id": str(pub.id),
+            "title": pub.title,
+            "doi": pub.doi,
+            "source": pub.source,
+            "submitted_at": pub.submitted_at.isoformat() if pub.submitted_at else None,
+            "kpt_id": active_kpt.kpt_id if active_kpt else None,
+            "kpt_status": active_kpt.status if active_kpt else None,
+            "verifications": verif_count,
+            "ai_queries": ai_count,
+        })
+
+    return {
+        "profile": {
+            "display_name": profile.display_name,
+            "orcid_id": profile.orcid_id,
+            "is_verified": profile.is_verified,
+        },
+        "quota": {
+            "monthly_quota": quota_status.quota,
+            "used": quota_status.used,
+            "remaining": quota_status.remaining,
+            "period_end": quota_status.period_end.isoformat(),
+        },
+        "stats": {
+            "total_publications": len(publications),
+            "total_kpts": len(kpts),
+            "total_verifications": total_verifications,
+            "total_ai_queries": total_ai_queries,
+        },
+        "publications": pub_stats,
+    }
