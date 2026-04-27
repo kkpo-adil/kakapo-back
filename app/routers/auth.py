@@ -188,7 +188,7 @@ def get_dashboard(request: Request, db: Session = Depends(get_db)):
     ).count()
 
     total_ai_queries = db.query(QueryLog).filter(
-        QueryLog.doi_queried.in_([k.doi for k in kpts])
+        QueryLog.doi_queried.in_(pub_dois)
     ).count()
 
     quota_service = KPTQuotaService()
