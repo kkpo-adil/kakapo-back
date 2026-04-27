@@ -34,5 +34,37 @@ with engine.connect() as conn:
     except Exception as e:
         print(f'quota columns: {e}')
 " || true
+python3 -c "
+import os
+from sqlalchemy import create_engine, text
+engine = create_engine(os.environ['DATABASE_URL'])
+with engine.connect() as conn:
+    try:
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS scientific_reviews (
+                id VARCHAR(36) PRIMARY KEY,
+                publication_id VARCHAR(36) REFERENCES publications(id),
+                reviewer_orcid VARCHAR(64) NOT NULL,
+                reviewer_name VARCHAR(255) NOT NULL,
+                reviewer_institution VARCHAR(255),
+                methodology_score INTEGER NOT NULL,
+                data_score INTEGER NOT NULL,
+                reproducibility_score INTEGER NOT NULL,
+                clarity_score INTEGER NOT NULL,
+                global_score FLOAT NOT NULL,
+                comment TEXT,
+                flag VARCHAR(50) NOT NULL DEFAULT 'none',
+                is_conflict_of_interest BOOLEAN NOT NULL DEFAULT false,
+                is_same_institution BOOLEAN NOT NULL DEFAULT false,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        '''))
+        conn.execute(text('CREATE INDEX IF NOT EXISTS ix_scientific_reviews_publication_id ON scientific_reviews(publication_id)'))
+        conn.execute(text('CREATE INDEX IF NOT EXISTS ix_scientific_reviews_reviewer_orcid ON scientific_reviews(reviewer_orcid)'))
+        conn.commit()
+        print('scientific_reviews table ready')
+    except Exception as e:
+        print(f'scientific_reviews: {e}')
+" || true
 alembic upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8000
