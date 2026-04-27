@@ -182,6 +182,7 @@ def get_dashboard(request: Request, db: Session = Depends(get_db)):
 
     kpts = db.query(KPT).filter(KPT.publication_id.in_(pub_ids)).all()
     kpt_ids = [k.id for k in kpts]
+    pub_dois = [p.doi for p in publications if p.doi]
 
     total_verifications = db.query(IntegrityCheckLog).filter(
         IntegrityCheckLog.kpt_id.in_(kpt_ids)
