@@ -1,17 +1,22 @@
 """
-Trust Engine V1 — Rule-based scoring.
+Trust Engine V2 — Multi-signal scoring.
 
-Scoring breakdown (total = 1.0):
-  source_score       0.20  — Known and reputable source (hal, arxiv > direct > other)
-  completeness_score 0.30  — Mandatory fields presence (title, abstract, doi, authors, institution)
-  freshness_score    0.20  — Publication recency (within 2 years = full score, decay after)
-  citation_score     0.15  — Presence of DOI (proxy for citability in V1; citations graph in V2)
-  dataset_score      0.15  — Associated dataset declared
+Scoring breakdown V1 (total = 1.0):
+  source_score    0.35  — Source credibility tier A/B/C/D
+  data_score      0.25  — Data integrity (DOI, dataset, reproducibility)
+  citation_score  0.20  — Citation network depth
+  freshness_score 0.20  — Publication recency
 
-V2 hooks:
-  - Replace citation_score with a real citation graph query (Neo4j)
-  - Add reproducibility_score from linked dataset verification
-  - Add contradiction_score from cross-publication analysis
+V2 hooks (when reviews reach critical mass):
+  source_score    0.30
+  data_score      0.20
+  citation_score  0.15
+  freshness_score 0.15
+  consistency     0.10
+  review_score    0.10  — Peer review median, ORCID-traced
+
+Principle: A good score does not say "this is true".
+           It says "here is how much you can trust it today".
 """
 
 from datetime import datetime, timezone
@@ -21,105 +26,143 @@ from app.models.publication import Publication
 from app.models.trust_score import TrustScore
 
 
-SCORING_VERSION = "1.0"
+SCORING_VERSION = "2.0"
 
-SOURCE_WEIGHTS = {
-    "hal": 1.0,
-    "arxiv": 1.0,
-    "direct": 0.5,
-    "other": 0.3,
-    None: 0.1,
+SOURCE_TIERS = {
+    "tier_a": {
+        "sources": ["nature", "science", "cell", "lancet", "nejm"],
+        "score": 0.95,
+    },
+    "tier_b": {
+        "sources": ["arxiv", "hal", "pubmed", "biorxiv", "medrxiv", "plos", "ieee"],
+        "score": 0.75,
+    },
+    "tier_c": {
+        "sources": ["direct", "institutional"],
+        "score": 0.50,
+    },
+    "tier_d": {
+        "sources": ["other"],
+        "score": 0.30,
+    },
 }
 
-COMPLETENESS_FIELDS = [
-    ("title", 0.25),
-    ("abstract", 0.25),
-    ("doi", 0.20),
-    ("authors_raw", 0.15),
-    ("institution_raw", 0.15),
+CITATION_TIERS = [
+    (0, 0, 0.20),
+    (1, 5, 0.50),
+    (6, 20, 0.70),
+    (21, 100, 0.85),
+    (101, None, 0.95),
 ]
 
-FRESHNESS_FULL_YEARS = 2
-FRESHNESS_DECAY_YEARS = 5
+FRESHNESS_TIERS = [
+    (0, 2, 0.95),
+    (2, 5, 0.75),
+    (5, 10, 0.55),
+    (10, None, 0.30),
+]
+
+WEIGHTS_V1 = {
+    "source": 0.35,
+    "data": 0.25,
+    "citation": 0.20,
+    "freshness": 0.20,
+}
 
 
 def _score_source(publication: Publication) -> float:
-    return SOURCE_WEIGHTS.get(publication.source, 0.1)
+    source = (publication.source or "").lower().strip()
+    for tier in SOURCE_TIERS.values():
+        if source in tier["sources"]:
+            return tier["score"]
+    doi = publication.doi or ""
+    if "10.1038" in doi or "10.1126" in doi or "10.1016" in doi:
+        return SOURCE_TIERS["tier_a"]["score"]
+    if doi:
+        return SOURCE_TIERS["tier_c"]["score"]
+    return SOURCE_TIERS["tier_d"]["score"]
 
 
-def _score_completeness(publication: Publication) -> float:
-    total = 0.0
-    for field, weight in COMPLETENESS_FIELDS:
-        value = getattr(publication, field, None)
-        if value is not None and str(value).strip():
-            total += weight
-    return round(total, 4)
+def _score_data(publication: Publication, dataset_hashes: list[str] | None) -> float:
+    score = 0.0
+    if publication.doi:
+        score += 0.40
+    if publication.abstract and len(publication.abstract.strip()) > 100:
+        score += 0.20
+    if publication.authors_raw and publication.authors_raw.strip():
+        score += 0.20
+    if dataset_hashes:
+        score += 0.20
+    return round(min(score, 1.0), 4)
+
+
+def _score_citation(citation_count: int | None) -> float:
+    count = citation_count or 0
+    for low, high, score in CITATION_TIERS:
+        if high is None:
+            return score
+        if low <= count <= high:
+            return score
+    return 0.20
 
 
 def _score_freshness(publication: Publication) -> float:
     reference_date = publication.submitted_at or publication.created_at
     if reference_date is None:
-        return 0.0
-
+        return 0.50
     now = datetime.now(timezone.utc)
     if reference_date.tzinfo is None:
         reference_date = reference_date.replace(tzinfo=timezone.utc)
+    age_years = (now - reference_date).days / 365.25
+    for low, high, score in FRESHNESS_TIERS:
+        if high is None or age_years < high:
+            if age_years >= low:
+                return score
+    return FRESHNESS_TIERS[-1][2]
 
-    age_days = (now - reference_date).days
-    age_years = age_days / 365.25
 
-    if age_years <= FRESHNESS_FULL_YEARS:
-        return 1.0
-    elif age_years >= FRESHNESS_DECAY_YEARS:
-        return 0.0
+def _score_reviews(review_scores: list[float] | None) -> float | None:
+    if not review_scores or len(review_scores) < 3:
+        return None
+    sorted_scores = sorted(review_scores)
+    n = len(sorted_scores)
+    if n % 2 == 0:
+        median = (sorted_scores[n // 2 - 1] + sorted_scores[n // 2]) / 2
     else:
-        decay_range = FRESHNESS_DECAY_YEARS - FRESHNESS_FULL_YEARS
-        elapsed = age_years - FRESHNESS_FULL_YEARS
-        return round(1.0 - (elapsed / decay_range), 4)
-
-
-def _score_citation(publication: Publication) -> float:
-    """
-    V1 proxy: having a DOI means the publication is formally citable.
-    V2: replace with actual citation count from OpenAlex or Semantic Scholar.
-    """
-    return 1.0 if publication.doi else 0.0
-
-
-def _score_dataset(publication: Publication, dataset_hashes: list[str] | None) -> float:
-    """Score based on declared dataset hashes passed at KPT issue time."""
-    return 1.0 if dataset_hashes else 0.0
+        median = sorted_scores[n // 2]
+    return round(median / 5.0, 4)
 
 
 def compute_trust_score(
     db: Session,
     publication: Publication,
     dataset_hashes: list[str] | None = None,
+    citation_count: int | None = None,
+    review_scores: list[float] | None = None,
 ) -> TrustScore:
-    """
-    Compute and persist the Trust Score for a publication.
-    Always creates a new score entry (score history is preserved).
-    """
-    weights = {
-        "source": 0.20,
-        "completeness": 0.30,
-        "freshness": 0.20,
-        "citation": 0.15,
-        "dataset": 0.15,
-    }
-
     source_score = _score_source(publication)
-    completeness_score = _score_completeness(publication)
+    data_score = _score_data(publication, dataset_hashes)
+    citation_score = _score_citation(citation_count)
     freshness_score = _score_freshness(publication)
-    citation_score = _score_citation(publication)
-    dataset_score = _score_dataset(publication, dataset_hashes)
+    review_score = _score_reviews(review_scores)
+
+    weights = WEIGHTS_V1.copy()
+    if review_score is not None:
+        weights = {
+            "source": 0.30,
+            "data": 0.20,
+            "citation": 0.15,
+            "freshness": 0.15,
+            "review": 0.10,
+            "consistency": 0.10,
+        }
 
     global_score = round(
         source_score * weights["source"]
-        + completeness_score * weights["completeness"]
-        + freshness_score * weights["freshness"]
+        + data_score * weights["data"]
         + citation_score * weights["citation"]
-        + dataset_score * weights["dataset"],
+        + freshness_score * weights["freshness"]
+        + (review_score * weights.get("review", 0) if review_score else 0),
         4,
     )
 
@@ -127,10 +170,10 @@ def compute_trust_score(
         publication_id=publication.id,
         score=global_score,
         source_score=source_score,
-        completeness_score=completeness_score,
+        completeness_score=data_score,
         freshness_score=freshness_score,
         citation_score=citation_score,
-        dataset_score=dataset_score,
+        dataset_score=data_score,
         scoring_version=SCORING_VERSION,
     )
 
@@ -147,3 +190,44 @@ def get_latest_trust_score(db: Session, publication_id) -> TrustScore | None:
         .order_by(TrustScore.scored_at.desc())
         .first()
     )
+
+
+def get_score_breakdown(trust_score: TrustScore) -> dict:
+    return {
+        "score": trust_score.score,
+        "version": trust_score.scoring_version,
+        "breakdown": {
+            "source": {
+                "score": trust_score.source_score,
+                "weight": WEIGHTS_V1["source"],
+                "label": "Crédibilité de la source",
+            },
+            "data": {
+                "score": trust_score.completeness_score,
+                "weight": WEIGHTS_V1["data"],
+                "label": "Intégrité des données",
+            },
+            "citation": {
+                "score": trust_score.citation_score,
+                "weight": WEIGHTS_V1["citation"],
+                "label": "Réseau de citations",
+            },
+            "freshness": {
+                "score": trust_score.freshness_score,
+                "weight": WEIGHTS_V1["freshness"],
+                "label": "Fraîcheur",
+            },
+        },
+        "interpretation": _interpret_score(trust_score.score),
+    }
+
+
+def _interpret_score(score: float) -> str:
+    if score >= 0.90:
+        return "Validé — fiabilité confirmée par l'usage"
+    elif score >= 0.70:
+        return "Solide — à confirmer dans le temps"
+    elif score >= 0.50:
+        return "Incertain — signaux mixtes"
+    else:
+        return "Faible crédibilité — prudence recommandée"

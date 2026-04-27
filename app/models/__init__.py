@@ -21,3 +21,5 @@ __all__ = [
 from app.models.scientist_profile import ScientistProfile
 from app.models.ai_client_profile import AIClientProfile, PlanType
 from app.models.query_log import QueryLog, QueryResult
+
+from app.models.scientific_review import ScientificReview, ReviewFlag

@@ -49,3 +49,6 @@ def root():
 @app.get("/health", tags=["Health"])
 def health():
     return {"status": "ok"}
+
+from app.routers import reviews
+app.include_router(reviews.router)
