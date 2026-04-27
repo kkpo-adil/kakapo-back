@@ -66,5 +66,15 @@ with engine.connect() as conn:
     except Exception as e:
         print(f'scientific_reviews: {e}')
 " || true
+python3 -c "
+import os
+from sqlalchemy import create_engine, text
+engine = create_engine(os.environ['DATABASE_URL'])
+with engine.connect() as conn:
+    conn.execute(text('DELETE FROM alembic_version'))
+    conn.execute(text(\"INSERT INTO alembic_version VALUES ('008')\"))
+    conn.commit()
+    print('alembic_version reset to 008')
+" || true
 alembic upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8000
