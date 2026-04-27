@@ -192,8 +192,12 @@ def get_dashboard(request: Request, db: Session = Depends(get_db)):
         QueryLog.doi_queried.in_(pub_dois)
     ).count()
 
-    quota_service = KPTQuotaService()
-    quota_status = quota_service.get_status(profile)
+    quota_info = {
+        "monthly_quota": getattr(profile, "monthly_kpt_quota", 50),
+        "used": getattr(profile, "kpt_count_current_period", 0),
+        "remaining": max(0, getattr(profile, "monthly_kpt_quota", 50) - getattr(profile, "kpt_count_current_period", 0)),
+        "period_end": None,
+    }
 
     pub_stats = []
     for pub in publications:
@@ -224,12 +228,7 @@ def get_dashboard(request: Request, db: Session = Depends(get_db)):
             "orcid_id": profile.orcid_id,
             "is_verified": profile.is_verified,
         },
-        "quota": {
-            "monthly_quota": quota_status.quota,
-            "used": quota_status.used,
-            "remaining": quota_status.remaining,
-            "period_end": quota_status.period_end.isoformat(),
-        },
+        "quota": quota_info,
         "stats": {
             "total_publications": len(publications),
             "total_kpts": len(kpts),
