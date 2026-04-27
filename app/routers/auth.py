@@ -174,11 +174,9 @@ def get_dashboard(request: Request, db: Session = Depends(get_db)):
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    publications = db.query(Publication).filter(
-        Publication.doi.in_(
-            db.query(KPT.doi).filter(KPT.status == "active")
-        )
-    ).all()
+    active_kpts = db.query(KPT).filter(KPT.status == "active").all()
+    active_pub_ids = [k.publication_id for k in active_kpts]
+    publications = db.query(Publication).filter(Publication.id.in_(active_pub_ids)).all()
 
     pub_ids = [str(p.id) for p in publications]
 
