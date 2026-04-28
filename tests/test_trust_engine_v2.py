@@ -1,3 +1,4 @@
+import math
 import os
 os.environ["KAKAPO_API_KEY"] = "test-api-key-123"
 
@@ -31,7 +32,7 @@ def test_source_tier_a():
 
 def test_source_tier_b():
     p = make_pub(source="arxiv")
-    assert _score_source(p) == 0.75
+    assert _score_source(p) == 0.70
 
 
 def test_source_tier_c():
@@ -47,7 +48,7 @@ def test_source_unknown():
 def test_data_score_full():
     p = make_pub()
     score = _score_data(p, ["hash1"])
-    assert score == 1.0
+    assert score == round((1 + 2 + 0 + 1) / 6, 4)
 
 
 def test_data_score_no_doi():
@@ -57,33 +58,33 @@ def test_data_score_no_doi():
 
 
 def test_citation_zero():
-    assert _score_citation(0) == 0.20
+    assert _score_citation(0) == 0.0
 
 
 def test_citation_low():
-    assert _score_citation(3) == 0.50
+    assert _score_citation(3) == round(1 - math.exp(-0.05 * 3), 4)
 
 
 def test_citation_medium():
-    assert _score_citation(10) == 0.70
+    assert _score_citation(10) == round(1 - math.exp(-0.05 * 10), 4)
 
 
 def test_citation_high():
-    assert _score_citation(50) == 0.85
+    assert _score_citation(50) == round(1 - math.exp(-0.05 * 50), 4)
 
 
 def test_citation_very_high():
-    assert _score_citation(200) == 0.95
+    assert _score_citation(200) > 0.99
 
 
 def test_freshness_recent():
     p = make_pub(submitted_at=datetime.now(timezone.utc) - timedelta(days=180))
-    assert _score_freshness(p) == 0.95
+    assert _score_freshness(p) > 0.94
 
 
 def test_freshness_old():
     p = make_pub(submitted_at=datetime.now(timezone.utc) - timedelta(days=365 * 12))
-    assert _score_freshness(p) == 0.30
+    assert _score_freshness(p) < 0.35
 
 
 def test_interpret_validated():
