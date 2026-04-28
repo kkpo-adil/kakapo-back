@@ -69,3 +69,58 @@ def get_balance(publisher_id: uuid.UUID, db: Session = Depends(get_db)):
     if not balance:
         raise HTTPException(status_code=404, detail="Balance not found")
     return balance
+
+@router.get("/me/dashboard")
+def get_publisher_dashboard(db: Session = Depends(get_db), _: str = Depends(require_api_key)):
+    from app.models.publication import Publication
+    from app.models.kpt import KPT
+    from app.models.integrity_check_log import IntegrityCheckLog
+    from app.models.query_log import QueryLog
+    from sqlalchemy import func
+
+    publishers = db.query(Publisher).filter(Publisher.status == "active").all()
+    if not publishers:
+        raise HTTPException(status_code=404, detail="No active publisher found")
+    publisher = publishers[0]
+
+    balance = db.query(PublisherBalance).filter(
+        PublisherBalance.publisher_id == publisher.id
+    ).first()
+
+    total_kpts = db.query(KPT).count()
+    active_kpts = db.query(KPT).filter(KPT.status == "active").count()
+
+    total_queries = db.query(QueryLog).count()
+
+    revenue_share = float(publisher.revenue_share_pct) / 100
+    estimated_revenue = total_queries * 0.002 * revenue_share
+
+    monthly_queries = db.query(QueryLog).filter(
+        func.date_trunc("month", QueryLog.queried_at) == func.date_trunc("month", func.now())
+    ).count()
+
+    monthly_revenue = monthly_queries * 0.002 * revenue_share
+
+    return {
+        "publisher": {
+            "id": str(publisher.id),
+            "name": publisher.name,
+            "slug": publisher.slug,
+            "status": publisher.status,
+            "contract_type": publisher.contract_type,
+            "revenue_share_pct": float(publisher.revenue_share_pct),
+        },
+        "balance": {
+            "total_earned": float(balance.total_earned) if balance else 0,
+            "total_paid_out": float(balance.total_paid_out) if balance else 0,
+            "pending_payout": float(balance.pending_payout) if balance else 0,
+        },
+        "stats": {
+            "total_kpts": total_kpts,
+            "active_kpts": active_kpts,
+            "total_queries": total_queries,
+            "monthly_queries": monthly_queries,
+            "estimated_total_revenue": round(estimated_revenue, 2),
+            "estimated_monthly_revenue": round(monthly_revenue, 2),
+        },
+    }
