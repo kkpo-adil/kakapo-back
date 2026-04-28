@@ -111,9 +111,10 @@ def get_publisher_dashboard(db: Session = Depends(get_db), _: str = Depends(requ
             "revenue_share_pct": float(publisher.revenue_share_pct),
         },
         "balance": {
-            "total_earned": float(balance.total_earned) if balance else 0,
-            "total_paid_out": float(balance.total_paid_out) if balance else 0,
-            "pending_payout": float(balance.pending_payout) if balance else 0,
+            "revenue_generated": float(balance.revenue_generated) if balance else 0,
+            "revenue_share_paid": float(balance.revenue_share_paid) if balance else 0,
+            "kpt_costs_pending": float(balance.kpt_costs_pending) if balance else 0,
+            "revenue_share_pending": float(balance.revenue_share_pending) if balance else 0,
         },
         "stats": {
             "total_kpts": total_kpts,
