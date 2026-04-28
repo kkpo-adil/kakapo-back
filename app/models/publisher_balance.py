@@ -20,6 +20,6 @@ class PublisherBalance(Base):
 
     @property
     def revenue_share_pending(self) -> float:
-        pct = self.publisher.revenue_share_pct if self.publisher else 30.0
+        pct = float(self.publisher.revenue_share_pct) if self.publisher else 30.0
         raw = float(self.revenue_generated) * pct / 100 - float(self.kpt_costs_pending)
         return max(0.0, raw)
