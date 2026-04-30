@@ -129,45 +129,54 @@ def ingest_batch(
     return report
 
 
-def _commit_batch(db: Session, pending: list[tuple[Publication, dict]], report: IngestReport) -> None:
+def _commit_one(db: Session, pub: Publication, doc: dict, report: IngestReport) -> None:
     try:
-        for pub, doc in pending:
-            doi = pub.doi or ""
-            citation_count = citation_reach.fetch_citation_count(doi) if doi else 0
-            idx_score = indexation_scorer.compute(doc, citation_count)
+        if pub.doi:
+            existing_doi = db.query(Publication).filter(Publication.doi == pub.doi).first()
+            if existing_doi:
+                report.total_skipped_existing += 1
+                return
 
-            db.add(pub)
-            db.flush()
+        doi = pub.doi or ""
+        citation_count = citation_reach.fetch_citation_count(doi) if doi else 0
+        idx_score = indexation_scorer.compute(doc, citation_count)
 
-            kpt = KPT(
-                id=uuid.uuid4(),
-                publication_id=pub.id,
-                kpt_id=f"IKPT-{str(pub.id).upper()[:8]}-v1",
-                content_hash=f"hal-{pub.hal_id or str(pub.id)[:8]}",
-                status="active",
-                version=1,
-                is_indexed=True,
-            )
-            db.add(kpt)
+        db.add(pub)
+        db.flush()
 
-            ts = TrustScore(
-                publication_id=pub.id,
-                score=round(idx_score / 100, 4),
-                source_score=0.0,
-                completeness_score=0.0,
-                freshness_score=0.0,
-                citation_score=0.0,
-                dataset_score=0.0,
-                scoring_version="indexation-1.0",
-                is_indexation_score=True,
-            )
-            db.add(ts)
+        kpt = KPT(
+            id=uuid.uuid4(),
+            publication_id=pub.id,
+            kpt_id=f"IKPT-{str(pub.id).upper()[:8]}-v1",
+            content_hash=f"hal-{pub.hal_id or str(pub.id)[:8]}",
+            status="active",
+            version=1,
+            is_indexed=True,
+        )
+        db.add(kpt)
 
+        ts = TrustScore(
+            publication_id=pub.id,
+            score=round(idx_score / 100, 4),
+            source_score=0.0,
+            completeness_score=0.0,
+            freshness_score=0.0,
+            citation_score=0.0,
+            dataset_score=0.0,
+            scoring_version="indexation-1.0",
+            is_indexation_score=True,
+        )
+        db.add(ts)
         db.commit()
-        report.total_created += len(pending)
-        logger.info(f"Committed batch of {len(pending)}")
+        report.total_created += 1
     except Exception as exc:
         db.rollback()
-        report.total_failed += len(pending)
-        report.errors.append(f"Batch rollback: {exc}")
-        logger.error(f"Batch commit failed, rolled back: {exc}")
+        report.total_failed += 1
+        report.errors.append(f"{pub.hal_id}: {str(exc)[:100]}")
+        logger.warning(f"Skip {pub.hal_id}: {exc}")
+
+
+def _commit_batch(db: Session, pending: list[tuple[Publication, dict]], report: IngestReport) -> None:
+    for pub, doc in pending:
+        _commit_one(db, pub, doc, report)
+    logger.info(f"Batch processed: created={report.total_created} skipped={report.total_skipped_existing} failed={report.total_failed}")
