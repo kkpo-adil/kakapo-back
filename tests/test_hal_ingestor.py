@@ -46,7 +46,7 @@ def test_ingest_batch_creates_publication():
 
 def test_ingest_batch_idempotent():
     db = TestSession()
-    doc = {**SAMPLE_DOC, "halId_s": "hal-idempotent-test"}
+    doc = {**SAMPLE_DOC, "halId_s": "hal-idempotent-test", "doiId_s": "10.9999/idempotent-unique"}
     with patch("app.services.hal_client.search", return_value=[doc]):
         with patch("app.services.citation_reach.fetch_citation_count", return_value=0):
             report1 = ingest_batch(db=db, query="test", max_results=1)
