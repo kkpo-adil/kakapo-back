@@ -496,3 +496,40 @@ def optout_publication(
     return {"status": "ok", "message": "Publication retirée de l'index public."}
 
 
+@router.get("/summary/stats")
+def publications_stats(db: Session = Depends(get_db)):
+    from sqlalchemy import func as sqlfunc
+    from app.models.trust_score import TrustScore
+
+    total = db.query(sqlfunc.count(Publication.id)).filter(Publication.opted_out_at.is_(None)).scalar()
+    certified = db.query(sqlfunc.count(Publication.id)).filter(
+        Publication.opted_out_at.is_(None),
+        Publication.kpt_status == "certified"
+    ).scalar()
+    indexed = db.query(sqlfunc.count(Publication.id)).filter(
+        Publication.opted_out_at.is_(None),
+        Publication.kpt_status == "indexed"
+    ).scalar()
+    avg_certified = db.query(sqlfunc.avg(TrustScore.score)).join(
+        Publication, TrustScore.publication_id == Publication.id
+    ).filter(
+        Publication.opted_out_at.is_(None),
+        Publication.kpt_status == "certified",
+        TrustScore.is_indexation_score == False
+    ).scalar()
+    by_source = {}
+    for src in ["hal", "editor_partner", "direct_deposit"]:
+        count = db.query(sqlfunc.count(Publication.id)).filter(
+            Publication.opted_out_at.is_(None),
+            Publication.source_origin == src
+        ).scalar()
+        by_source[src] = count
+    return {
+        "total": total,
+        "certified": certified,
+        "indexed": indexed,
+        "avg_score_certified": round(float(avg_certified), 4) if avg_certified else None,
+        "by_source": by_source,
+    }
+
+
