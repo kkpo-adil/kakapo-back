@@ -178,15 +178,31 @@ def list_publications(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     source: str | None = Query(None, description="Filter by source"),
+    search: str | None = Query(None, description="Search by title, authors, DOI"),
+    sort_by: str | None = Query(None, description="Sort: score_desc, score_asc, date_desc"),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Publication)
+    query = db.query(Publication).filter(Publication.opted_out_at.is_(None))
     if source:
         query = query.filter(Publication.source == source)
-
+    if search:
+        query = query.filter(
+            Publication.title.ilike(f"%{search}%") |
+            Publication.authors_raw.ilike(f"%{search}%") |
+            Publication.doi.ilike(f"%{search}%")
+        )
     total = query.count()
-    items = query.order_by(Publication.created_at.desc()).offset(skip).limit(limit).all()
-
+    if sort_by == "score_desc":
+        from app.models.trust_score import TrustScore as TS
+        query = query.outerjoin(TS, TS.publication_id == Publication.id).order_by(TS.score.desc().nulls_last())
+    elif sort_by == "score_asc":
+        from app.models.trust_score import TrustScore as TS
+        query = query.outerjoin(TS, TS.publication_id == Publication.id).order_by(TS.score.asc().nulls_last())
+    elif sort_by == "date_desc":
+        query = query.order_by(Publication.submitted_at.desc().nulls_last())
+    else:
+        query = query.order_by(Publication.created_at.desc())
+    items = query.offset(skip).limit(limit).all()
     return PublicationList(total=total, items=items)
 
 
@@ -414,15 +430,31 @@ def list_publications(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     source: str | None = Query(None, description="Filter by source"),
+    search: str | None = Query(None, description="Search by title, authors, DOI"),
+    sort_by: str | None = Query(None, description="Sort: score_desc, score_asc, date_desc"),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Publication)
+    query = db.query(Publication).filter(Publication.opted_out_at.is_(None))
     if source:
         query = query.filter(Publication.source == source)
-
+    if search:
+        query = query.filter(
+            Publication.title.ilike(f"%{search}%") |
+            Publication.authors_raw.ilike(f"%{search}%") |
+            Publication.doi.ilike(f"%{search}%")
+        )
     total = query.count()
-    items = query.order_by(Publication.created_at.desc()).offset(skip).limit(limit).all()
-
+    if sort_by == "score_desc":
+        from app.models.trust_score import TrustScore as TS
+        query = query.outerjoin(TS, TS.publication_id == Publication.id).order_by(TS.score.desc().nulls_last())
+    elif sort_by == "score_asc":
+        from app.models.trust_score import TrustScore as TS
+        query = query.outerjoin(TS, TS.publication_id == Publication.id).order_by(TS.score.asc().nulls_last())
+    elif sort_by == "date_desc":
+        query = query.order_by(Publication.submitted_at.desc().nulls_last())
+    else:
+        query = query.order_by(Publication.created_at.desc())
+    items = query.offset(skip).limit(limit).all()
     return PublicationList(total=total, items=items)
 
 
