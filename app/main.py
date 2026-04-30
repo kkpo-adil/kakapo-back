@@ -52,3 +52,6 @@ def health():
 
 from app.routers import reviews
 app.include_router(reviews.router)
+
+from app.routers import contact
+app.include_router(contact.router)
