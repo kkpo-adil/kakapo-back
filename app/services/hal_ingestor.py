@@ -24,17 +24,22 @@ class IngestReport:
     duration_seconds: float = 0.0
 
 
+def _str(val) -> str:
+    if isinstance(val, list):
+        return val[0] if val else ""
+    return str(val) if val else ""
+
+
 def _map_hal_to_publication(doc: dict) -> dict:
-    title_raw = doc.get("title_s", [])
-    title = title_raw[0] if isinstance(title_raw, list) and title_raw else (title_raw or "Sans titre")
-
-    abstract_raw = doc.get("abstract_s", [])
-    abstract = abstract_raw[0] if isinstance(abstract_raw, list) and abstract_raw else (abstract_raw or "")
-
+    title = _str(doc.get("title_s", "")) or "Sans titre"
+    abstract = _str(doc.get("abstract_s", ""))
     authors = doc.get("authFullName_s", [])
-    authors_raw = str(authors) if authors else ""
+    authors_raw = ", ".join(authors) if isinstance(authors, list) else str(authors or "")
+    doi = _str(doc.get("doiId_s", ""))
+    hal_id = _str(doc.get("halId_s", ""))
+    publisher = _str(doc.get("publisher_s", ""))
+    date_str = _str(doc.get("producedDate_s") or doc.get("submittedDate_s") or "")
 
-    date_str = doc.get("producedDate_s") or doc.get("submittedDate_s") or ""
     submitted_at = None
     if date_str:
         try:
@@ -43,16 +48,16 @@ def _map_hal_to_publication(doc: dict) -> dict:
             submitted_at = None
 
     return {
-        "title": str(title)[:500],
-        "abstract": str(abstract)[:5000],
-        "doi": doc.get("doiId_s", ""),
+        "title": title[:500],
+        "abstract": abstract[:5000],
+        "doi": doi,
         "authors_raw": authors_raw,
-        "institution_raw": str(doc.get("publisher_s", "") or ""),
+        "institution_raw": publisher,
         "source": "hal",
         "submitted_at": submitted_at,
         "kpt_status": "indexed",
         "source_origin": "hal",
-        "hal_id": doc.get("halId_s", ""),
+        "hal_id": hal_id,
     }
 
 
