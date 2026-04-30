@@ -55,3 +55,5 @@ app.include_router(reviews.router)
 
 from app.routers import contact
 app.include_router(contact.router)
+from app.routers import ingest
+app.include_router(ingest.router)

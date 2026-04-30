@@ -1,3 +1,4 @@
+from pydantic import BaseModel
 import uuid
 import json
 from pathlib import Path
@@ -232,3 +233,28 @@ async def get_crossref_metadata(doi: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+class OptOutRequest(BaseModel):
+    reason: str
+    contact_email: str
+
+
+@router.post("/{publication_id}/optout")
+def optout_publication(
+    publication_id: str,
+    body: OptOutRequest,
+    db: Session = Depends(get_db),
+):
+    pub = db.query(Publication).filter(Publication.id == publication_id).first()
+    if not pub:
+        raise HTTPException(status_code=404, detail="Publication introuvable")
+    if pub.opted_out_at:
+        raise HTTPException(status_code=409, detail="Publication déjà retirée")
+    from datetime import datetime, timezone
+    pub.opted_out_at = datetime.now(timezone.utc)
+    db.commit()
+    import logging
+    logging.getLogger(__name__).info(
+        f"[OPT-OUT] publication_id={publication_id} reason={body.reason!r} contact={body.contact_email}"
+    )
+    return {"status": "ok", "message": "Publication retirée de l'index public."}

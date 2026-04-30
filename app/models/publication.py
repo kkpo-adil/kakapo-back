@@ -31,6 +31,12 @@ class Publication(Base):
     submitted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    kpt_status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="certified", index=True)
+    source_origin: Mapped[str] = mapped_column(String(64), nullable=False, server_default="direct_deposit", index=True)
+    hal_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True, unique=True)
+    opted_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

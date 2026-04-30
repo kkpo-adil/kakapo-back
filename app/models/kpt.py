@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, ForeignKey, Integer, func
+from sqlalchemy import Boolean, String, DateTime, ForeignKey, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -29,6 +29,7 @@ class KPT(Base):
         String(32), default="active", nullable=False,
         comment="active | challenged | revoked | superseded"
     )
+    is_indexed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     issued_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
