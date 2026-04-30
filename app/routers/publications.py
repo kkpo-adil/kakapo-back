@@ -179,12 +179,15 @@ def list_publications(
     limit: int = Query(20, ge=1, le=100),
     source: str | None = Query(None, description="Filter by source"),
     search: str | None = Query(None, description="Search by title, authors, DOI"),
+    kpt_status: str | None = Query(None, description="Filter by kpt_status: certified or indexed"),
     sort_by: str | None = Query(None, description="Sort: score_desc, score_asc, date_desc"),
     db: Session = Depends(get_db),
 ):
     query = db.query(Publication).filter(Publication.opted_out_at.is_(None))
     if source:
         query = query.filter(Publication.source == source)
+    if kpt_status in ("certified", "indexed"):
+        query = query.filter(Publication.kpt_status == kpt_status)
     if search:
         query = query.filter(
             Publication.title.ilike(f"%{search}%") |
@@ -431,12 +434,15 @@ def list_publications(
     limit: int = Query(20, ge=1, le=100),
     source: str | None = Query(None, description="Filter by source"),
     search: str | None = Query(None, description="Search by title, authors, DOI"),
+    kpt_status: str | None = Query(None, description="Filter by kpt_status: certified or indexed"),
     sort_by: str | None = Query(None, description="Sort: score_desc, score_asc, date_desc"),
     db: Session = Depends(get_db),
 ):
     query = db.query(Publication).filter(Publication.opted_out_at.is_(None))
     if source:
         query = query.filter(Publication.source == source)
+    if kpt_status in ("certified", "indexed"):
+        query = query.filter(Publication.kpt_status == kpt_status)
     if search:
         query = query.filter(
             Publication.title.ilike(f"%{search}%") |
