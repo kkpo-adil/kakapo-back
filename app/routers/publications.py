@@ -258,3 +258,241 @@ def optout_publication(
         f"[OPT-OUT] publication_id={publication_id} reason={body.reason!r} contact={body.contact_email}"
     )
     return {"status": "ok", "message": "Publication retirée de l'index public."}
+@router.post(
+    "/upload",
+    response_model=PublicationRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a PDF and create a publication with its KPT and Trust Score",
+)
+async def upload_publication(
+    file: UploadFile = File(..., description="PDF file"),
+    title: str = Form(..., min_length=1, max_length=512),
+    abstract: str | None = Form(None),
+    source: str | None = Form(None, description="hal | arxiv | direct | other"),
+    doi: str | None = Form(None),
+    authors_raw: str | None = Form(None, description="JSON string: [{name, orcid?}]"),
+    institution_raw: str | None = Form(None),
+    submitted_at: str | None = Form(None, description="ISO 8601 datetime"),
+    orcid_authors: str | None = Form(None, description="JSON array of ORCID URIs"),
+    ror_institution: str | None = Form(None),
+    dataset_hashes: str | None = Form(None, description="JSON array of SHA-256 strings"),
+    db: Session = Depends(get_db),
+):
+    # --- Validate file type ---
+    if file.content_type not in ("application/pdf", "application/octet-stream"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PDF files are accepted",
+        )
+
+    # --- Validate file size ---
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    if file_size > settings.max_upload_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds maximum size of {settings.MAX_UPLOAD_SIZE_MB} MB",
+        )
+
+    # --- Validate source ---
+    allowed_sources = {"hal", "arxiv", "direct", "other", None}
+    if source not in allowed_sources:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"source must be one of: hal, arxiv, direct, other",
+        )
+
+    # --- Parse optional JSON fields ---
+    parsed_orcid = None
+    if orcid_authors:
+        try:
+            parsed_orcid = json.loads(orcid_authors)
+            if not isinstance(parsed_orcid, list):
+                raise ValueError
+        except (json.JSONDecodeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="orcid_authors must be a valid JSON array",
+            )
+
+    parsed_dataset_hashes = None
+    if dataset_hashes:
+        try:
+            parsed_dataset_hashes = json.loads(dataset_hashes)
+            if not isinstance(parsed_dataset_hashes, list):
+                raise ValueError
+        except (json.JSONDecodeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="dataset_hashes must be a valid JSON array",
+            )
+
+    parsed_submitted_at = None
+    if submitted_at:
+        try:
+            parsed_submitted_at = datetime.fromisoformat(submitted_at)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="submitted_at must be a valid ISO 8601 datetime",
+            )
+
+
+    # --- CrossRef enrichment ---
+    if doi:
+        try:
+            loop = asyncio.get_event_loop()
+            crossref_data = loop.run_until_complete(fetch_doi_metadata(doi))
+            if crossref_data:
+                if not title or title == doi:
+                    title = crossref_data.get("title", title)
+                if not abstract:
+                    abstract = crossref_data.get("abstract", "")
+                if not authors_raw and crossref_data.get("authors"):
+                    import json as _json
+                    authors_raw = _json.dumps(crossref_data["authors"])
+                if not institution_raw:
+                    institution_raw = crossref_data.get("institution", "")
+        except Exception:
+            pass
+
+    # --- Persist file ---
+    pub_id = uuid.uuid4()
+    upload_dir: Path = settings.upload_path / str(pub_id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_filename = Path(file.filename).name if file.filename else "document.pdf"
+    dest_path = upload_dir / safe_filename
+
+    async with aiofiles.open(dest_path, "wb") as out_file:
+        while chunk := await file.read(65536):
+            await out_file.write(chunk)
+
+    # --- Compute hash ---
+    file_hash = compute_sha256_file(dest_path)
+
+    # --- Create Publication ---
+    publication = Publication(
+        id=pub_id,
+        title=title,
+        abstract=abstract,
+        source=source,
+        file_path=str(dest_path),
+        file_hash=file_hash,
+        doi=doi,
+        authors_raw=authors_raw,
+        institution_raw=institution_raw,
+        submitted_at=parsed_submitted_at,
+    )
+    db.add(publication)
+    db.commit()
+    db.refresh(publication)
+
+    # --- Issue KPT ---
+    kpt_request = KPTIssueRequest(
+        publication_id=publication.id,
+        orcid_authors=parsed_orcid,
+        ror_institution=ror_institution,
+        dataset_hashes=parsed_dataset_hashes,
+    )
+    issue_kpt(db, kpt_request)
+
+    # --- Compute Trust Score ---
+    compute_trust_score(db, publication, dataset_hashes=parsed_dataset_hashes)
+
+    db.refresh(publication)
+    return publication
+
+
+@router.get(
+    "/",
+    response_model=PublicationList,
+    summary="List all publications with pagination",
+)
+def list_publications(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    source: str | None = Query(None, description="Filter by source"),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Publication)
+    if source:
+        query = query.filter(Publication.source == source)
+
+    total = query.count()
+    items = query.order_by(Publication.created_at.desc()).offset(skip).limit(limit).all()
+
+    return PublicationList(total=total, items=items)
+
+
+@router.get(
+    "/{publication_id}",
+    response_model=PublicationRead,
+    summary="Get a publication by ID",
+)
+def get_publication(
+    publication_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    publication = db.query(Publication).filter(Publication.id == publication_id).first()
+    if not publication:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Publication {publication_id} not found",
+        )
+    return publication
+
+
+@router.get("/crossref/{doi:path}", summary="Fetch metadata from CrossRef by DOI")
+async def get_crossref_metadata(doi: str):
+    import httpx
+    url = f"https://api.crossref.org/works/{doi}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(url, headers={"User-Agent": "KAKAPO/1.0 (mailto:contact@kakapo.io)"})
+            if r.status_code != 200:
+                raise HTTPException(status_code=404, detail="DOI not found on CrossRef")
+            work = r.json().get("message", {})
+            title = work.get("title", [""])[0]
+            abstract = work.get("abstract", "")
+            authors = [{"name": f"{a.get('given', '')} {a.get('family', '')}".strip()} for a in work.get("author", [])]
+            journal = (work.get("container-title") or [""])[0]
+            authors_list = work.get("author") or []
+            affil = authors_list[0].get("affiliation", []) if authors_list else []
+            institution = affil[0].get("name", "") if affil else ""
+            parts = (work.get("published") or {}).get("date-parts", [[None]])[0]
+            published_at = f"{parts[0]:04d}-{(parts[1] if len(parts)>1 else 1):02d}-01" if parts and parts[0] else None
+            return {"title": title, "abstract": abstract, "authors": authors, "journal": journal, "institution": institution, "published_at": published_at, "doi": doi}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class OptOutRequest(BaseModel):
+    reason: str
+    contact_email: str
+
+
+@router.post("/{publication_id}/optout")
+def optout_publication(
+    publication_id: str,
+    body: OptOutRequest,
+    db: Session = Depends(get_db),
+):
+    pub = db.query(Publication).filter(Publication.id == publication_id).first()
+    if not pub:
+        raise HTTPException(status_code=404, detail="Publication introuvable")
+    if pub.opted_out_at:
+        raise HTTPException(status_code=409, detail="Publication déjà retirée")
+    from datetime import datetime, timezone
+    pub.opted_out_at = datetime.now(timezone.utc)
+    db.commit()
+    import logging
+    logging.getLogger(__name__).info(
+        f"[OPT-OUT] publication_id={publication_id} reason={body.reason!r} contact={body.contact_email}"
+    )
+    return {"status": "ok", "message": "Publication retirée de l'index public."}
+
+
