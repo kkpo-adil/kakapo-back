@@ -71,3 +71,13 @@ def ingest_status(db: Session = Depends(get_db), _: str = Depends(require_admin)
         "last_ingestion_at": datetime.now(timezone.utc).isoformat(),
         "top_5_domains_indexed": [{"domain": r[0], "count": r[1]} for r in domain_rows],
     }
+
+@router.post("/seed-certified")
+def seed_certified_publications(db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    import sys
+    sys.path.insert(0, "/app")
+    from scripts.seed_certified import seed
+    seed(db)
+    from sqlalchemy import func as sqlfunc
+    total = db.query(sqlfunc.count(Publication.id)).filter(Publication.kpt_status == "certified").scalar()
+    return {"status": "ok", "certified_total": total}
