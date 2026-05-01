@@ -51,6 +51,19 @@ def search(
     if kpt_status_filter != "all":
         q = q.filter(Publication.kpt_status == kpt_status_filter)
 
+    if kpt_status_filter != "indexed":
+        certified_q = db.query(Publication, KPT, TrustScore).join(
+            KPT, KPT.publication_id == Publication.id
+        ).outerjoin(
+            TrustScore, TrustScore.publication_id == Publication.id
+        ).filter(
+            Publication.opted_out_at.is_(None),
+            Publication.kpt_status == "certified",
+        ).order_by(TrustScore.score.desc().nulls_last()).limit(limit)
+        certified_rows = certified_q.all()
+    else:
+        certified_rows = []
+
     terms = query.strip().split()
     for term in terms[:5]:
         q = q.filter(or_(
@@ -64,7 +77,16 @@ def search(
         TrustScore.score.desc().nulls_last(),
     ).limit(limit)
 
-    rows = q.all()
+    indexed_rows = q.all()
+
+    seen_ids = set()
+    rows = []
+    for row in list(certified_rows) + list(indexed_rows):
+        pub_id = str(row[0].id)
+        if pub_id not in seen_ids:
+            seen_ids.add(pub_id)
+            rows.append(row)
+    rows = rows[:limit]
     results = []
     for pub, kpt, ts in rows:
         authors_raw = pub.authors_raw or ""
