@@ -39,6 +39,10 @@ class PublicationRead(BaseModel):
     submitted_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    kpt_status: str = "certified"
+    source_origin: str = "direct_deposit"
+    hal_id: str | None = None
+    opted_out_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
