@@ -133,7 +133,7 @@ def seed_certified_publications(db: Session = Depends(get_db), _: str = Depends(
         s_data = round((1 + 0 + 0 + 1) / 6, 4)
         s_consistency = 1.0
         score = round(0.30*s_source + 0.20*s_data + 0.20*s_citation + 0.15*s_freshness + 0.10*s_consistency, 4)
-        db.add(KPT(id=uuid.uuid4(), publication_id=pub.id, kpt_id=f"KPT-{str(pub.id).upper()[:8]}-v1", content_hash=f"certified-{p['doi'].replace('//','-')}", status="active", version=1, is_indexed=False))
+        db.add(KPT(id=uuid.uuid4(), publication_id=pub.id, kpt_id=f"KPT-{str(pub.id).upper().replace('-','')[:12]}-v1", content_hash=f"certified-{p['doi'].replace('//','-')}", status="active", version=1, is_indexed=False))
         db.add(TrustScore(publication_id=pub.id, score=score, source_score=s_source, completeness_score=s_data, freshness_score=s_freshness, citation_score=s_citation, dataset_score=s_data, scoring_version="3.0", is_indexation_score=False))
         db.commit(); created += 1
     for src_id, tgt_id in RELS:
