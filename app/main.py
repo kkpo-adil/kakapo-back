@@ -57,3 +57,5 @@ from app.routers import contact
 app.include_router(contact.router)
 from app.routers import ingest
 app.include_router(ingest.router)
+from app.routers import demo
+app.include_router(demo.router)
