@@ -145,3 +145,40 @@ def seed_certified_publications(db: Session = Depends(get_db), _: str = Depends(
     from sqlalchemy import func as sqlfunc
     total = db.query(sqlfunc.count(Publication.id)).filter(Publication.kpt_status == "certified").scalar()
     return {"status": "ok", "certified_total": total}
+
+
+@router.post("/fix-hashes")
+def fix_certified_hashes(db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    import hashlib
+    from app.models.kpt import KPT
+    from app.models.publication import Publication
+
+    UPDATES = [
+        ("10.48550/arXiv.1706.03762", "4fe4597b6b88ddc617b84679ff54d3f1ab5c794ec069fd4d90902dcd75318760"),
+        ("10.48550/arXiv.1810.04805", "83319cccd42f00e28ed38ce32ae509ebd9a2ee8af74a66aa6637f2714c0edc59"),
+        ("10.48550/arXiv.1512.03385", "4137ed3fd645c79c2184c9335fd43d21c3a322e8a24b8988371cb338bac36f40"),
+        ("10.48550/arXiv.1406.2661", "854bc0afd0719be7a758534ca466b980609377c375d9276cf7cf4ee99399c9dd"),
+        ("10.5555/2627435.2670313", "7c248ce83cf1e31d5be1af25bd1f581a5400c043aa3de55406da87d0f149e183"),
+        ("10.48550/arXiv.1412.6980", "801a0dcfd1477af38f98c088901b9c0acb390518c3843ac832388047485f7e08"),
+        ("10.1007/s11263-015-0816-y", "06aea9a7c2d4d627ae9028fe7776b7ca80f49661c116d92c9757df74afd76dce"),
+        ("10.48550/arXiv.2005.14165", "d72374c7cbc2618a595d3d18383b25f91bbf8e0ff4f729076413dbc4211927a3"),
+        ("10.48550/arXiv.1907.11692", "6317be2bfb6e19fd3dd33bf42eeb92c4cc8d2114fbbc16474b661de57c2061a9"),
+        ("10.48550/arXiv.1910.10683", "b249014941204dd58424f2183c7ae75346c3e6cb607c232833704ce71d37a9f1"),
+        ("10.48550/arXiv.1409.1556", "03781f38374baf56a157e33645511c6beb44c0ce6e0568cddd36e72f52a398eb"),
+        ("10.48550/arXiv.1506.02640", "10335cd0c822ee01f40432f63c8be164d3d70e6fb1dd06cb6e5d8e2704aa6230"),
+        ("10.48550/arXiv.1301.3781", "e9b5aa29e632c1b1a7c2306bdbe4f6a5d72ac0820aa10db6f577ebe1e851932c"),
+        ("10.1038/nature14539", "23d4b9b2ce98cfde1f1e231bd79d63c248073631313f50ced169457a849ab64f"),
+        ("10.48550/arXiv.2010.11929", "bd1b35295c04f5a622696b8942c21faf7cbc8e376dec7f8d6403bd2f5743c382"),
+    ]
+
+    updated = 0
+    for doi, new_hash in UPDATES:
+        pub = db.query(Publication).filter(Publication.doi == doi).first()
+        if not pub:
+            continue
+        kpt = db.query(KPT).filter(KPT.publication_id == pub.id).first()
+        if kpt:
+            kpt.content_hash = new_hash
+            updated += 1
+    db.commit()
+    return {"status": "ok", "updated": updated}
