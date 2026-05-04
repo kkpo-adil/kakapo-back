@@ -57,7 +57,7 @@ def chat_with_tools(
     tools: list[dict],
     system: str = "",
     tool_choice: dict | None = None,
-    max_tokens: int = 2048,
+    max_tokens: int = 1024,
 ) -> AnthropicResponse:
     client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
     t0 = time.time()
@@ -93,7 +93,7 @@ def chat_with_tools(
 def chat_simple(
     messages: list[dict],
     system: str = "",
-    max_tokens: int = 2048,
+    max_tokens: int = 1024,
 ) -> AnthropicResponse:
     client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
     t0 = time.time()
