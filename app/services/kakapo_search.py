@@ -51,14 +51,14 @@ def search(
     if kpt_status_filter != "all":
         q = q.filter(Publication.kpt_status == kpt_status_filter)
 
-    terms = [t for t in query.strip().split() if len(t) > 2][:5]
+    terms = [t for t in query.strip().split() if len(t) > 2][:8]
     if terms:
+        term_filters = []
         for term in terms:
-            q = q.filter(or_(
-                Publication.title.ilike(f"%{term}%"),
-                Publication.abstract.ilike(f"%{term}%"),
-                Publication.authors_raw.ilike(f"%{term}%"),
-            ))
+            term_filters.append(Publication.title.ilike(f"%{term}%"))
+            term_filters.append(Publication.abstract.ilike(f"%{term}%"))
+            term_filters.append(Publication.authors_raw.ilike(f"%{term}%"))
+        q = q.filter(or_(*term_filters))
 
     q = q.order_by(
         (Publication.kpt_status == "certified").desc(),
