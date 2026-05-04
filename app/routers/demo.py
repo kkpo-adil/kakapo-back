@@ -14,7 +14,7 @@ from app.services import demo_orchestrator, pdf_export
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/demo", tags=["Demo"])
 
-_cache: TTLCache = TTLCache(maxsize=256, ttl=300)
+_cache: TTLCache = TTLCache(maxsize=256, ttl=1800)
 _rate_limit: dict = {}
 RATE_LIMIT = int(os.environ.get("DEMO_RATE_LIMIT_PER_MINUTE", "10"))
 
