@@ -570,4 +570,65 @@ def publications_stats(db: Session = Depends(get_db)):
         "by_source": by_source,
     }
 
+@router.get("/my/earnings")
+def my_earnings(request: Request, db: Session = Depends(get_db)):
+    from app.models.kpt import KPT
+    from app.models.trust_score import TrustScore
+    from sqlalchemy import func as sqlfunc
 
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not token:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+
+    try:
+        import jwt
+        import os
+        payload = jwt.decode(token, os.environ.get("JWT_SECRET", ""), algorithms=["HS256"])
+        orcid = payload.get("orcid")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token invalide")
+
+    pubs = db.query(Publication).filter(
+        Publication.authors_raw.ilike(f"%{orcid}%"),
+        Publication.opted_out_at.is_(None),
+    ).all() if orcid else []
+
+    total_kpts = 0
+    certified_kpts = 0
+    indexed_kpts = 0
+    total_vo = 0
+    total_earnings_usd = 0.0
+    publications_data = []
+
+    for pub in pubs:
+        kpt = db.query(KPT).filter(KPT.publication_id == pub.id).first()
+        ts = db.query(TrustScore).filter(TrustScore.publication_id == pub.id).first()
+        vo_count = 0
+        earnings = 0.0
+        total_vo += vo_count
+        total_earnings_usd += earnings
+        total_kpts += 1
+        if pub.kpt_status == "certified":
+            certified_kpts += 1
+        else:
+            indexed_kpts += 1
+        publications_data.append({
+            "id": str(pub.id),
+            "title": pub.title,
+            "kpt_status": pub.kpt_status,
+            "kpt_id": kpt.kpt_id if kpt else None,
+            "trust_score": round(ts.score * 100) if ts and ts.score else None,
+            "vo_generated": vo_count,
+            "earnings_usd": earnings,
+            "submitted_at": pub.submitted_at.isoformat() if pub.submitted_at else None,
+        })
+
+    return {
+        "total_publications": len(pubs),
+        "certified_kpts": certified_kpts,
+        "indexed_kpts": indexed_kpts,
+        "total_vo_generated": total_vo,
+        "total_earnings_usd": total_earnings_usd,
+        "revenue_share_pct": 70,
+        "publications": publications_data,
+    }
