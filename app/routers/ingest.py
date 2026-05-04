@@ -264,3 +264,25 @@ def seed_clinical_trials(db: Session = Depends(get_db), _: str = Depends(require
         created += 1
 
     return {"status": "ok", "created": created, "skipped": skipped}
+
+@router.post("/patch-clinical-abstracts")
+def patch_clinical_abstracts(db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    from app.models.publication import Publication
+
+    PATCHES = [
+        ("10.1056/NEJMoa2012920", "KEYNOTE-355 Phase III pembrolizumab chimiotherapie cancer sein triple negatif TNBC biomarqueurs PD-L1 immunotherapie metastatique. Pembrolizumab plus chemotherapy versus placebo in triple negative breast cancer TNBC. Biomarqueurs pronostiques cancer sein."),
+        ("10.1056/NEJMoa2108540", "ASCENT sacituzumab govitecan cancer sein triple negatif metastatique TNBC biomarqueurs pronostiques traitement. Triple negative breast cancer metastatic treatment biomarkers."),
+        ("10.1016/j.annonc.2023.08.001", "Ipatasertib atezolizumab paclitaxel cancer sein triple negatif TNBC localement avance metastatique biomarqueurs PI3K. Triple negative breast cancer biomarkers treatment."),
+        ("10.1056/NEJMoa2109022", "Dapagliflozin inhibiteur SGLT2 insuffisance cardiaque aigue diabete type 2 biomarqueurs cardiaques. SGLT2 inhibitor heart failure acute diabetes biomarkers cardiac function dapagliflozin."),
+        ("10.1016/j.jacc.2022.03.338", "Empagliflozin inhibiteur SGLT2 insuffisance cardiaque infarctus myocarde biomarqueurs cardiaques fonction cardiaque. SGLT2 inhibitor heart failure myocardial infarction empagliflozin biomarkers."),
+        ("10.1200/JCO.2016.68.3573", "Capecitabine maintenance chimiotherapie adjuvante cancer sein triple negatif operable TNBC biomarqueurs pronostiques survie. Capecitabine triple negative breast cancer adjuvant biomarkers survival."),
+    ]
+
+    updated = 0
+    for doi, new_abstract in PATCHES:
+        pub = db.query(Publication).filter(Publication.doi == doi).first()
+        if pub:
+            pub.abstract = new_abstract
+            updated += 1
+    db.commit()
+    return {"status": "ok", "updated": updated}
