@@ -129,7 +129,7 @@ def get_publisher_dashboard(db: Session = Depends(get_db), _: str = Depends(requ
 @router.get("/me/breakdown")
 def publisher_breakdown(
     db: Session = Depends(get_db),
-    api_key: str = Depends(get_publisher_api_key),
+    db2: Session = Depends(get_db), _: str = Depends(require_api_key),
 ):
     from app.models.publication import Publication
     from app.models.trust_score import TrustScore
