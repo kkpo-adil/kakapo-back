@@ -13,7 +13,7 @@ from app.services import demo_orchestrator, pdf_export
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/demo", tags=["Demo"])
 
-_cache: TTLCache = TTLCache(maxsize=256, ttl=3600)
+_cache: TTLCache = TTLCache(maxsize=256, ttl=300)
 _rate_limit: dict = {}
 RATE_LIMIT = int(os.environ.get("DEMO_RATE_LIMIT_PER_MINUTE", "10"))
 
@@ -88,3 +88,8 @@ def demo_export(body: DemoExportRequest, db: Session = Depends(get_db)):
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{info.filename}"'},
     )
+
+@router.post("/clear-cache")
+def clear_cache(_: str = Depends(require_admin)):
+    _cache.clear()
+    return {"status": "ok", "message": "Cache cleared"}
