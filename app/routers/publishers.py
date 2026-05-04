@@ -125,3 +125,50 @@ def get_publisher_dashboard(db: Session = Depends(get_db), _: str = Depends(requ
             "estimated_monthly_revenue": round(monthly_revenue, 2),
         },
     }
+
+@router.get("/me/breakdown")
+def publisher_breakdown(
+    db: Session = Depends(get_db),
+    api_key: str = Depends(get_publisher_api_key),
+):
+    from app.models.publication import Publication
+    from app.models.trust_score import TrustScore
+    from app.models.kpt import KPT
+
+    publisher = db.query(Publisher).filter(Publisher.api_key == api_key).first()
+    if not publisher:
+        raise HTTPException(status_code=404, detail="Éditeur introuvable")
+
+    pubs = db.query(Publication).filter(
+        Publication.source_origin == "editor_partner",
+        Publication.opted_out_at.is_(None),
+    ).all()
+
+    breakdown = []
+    for pub in pubs:
+        ts = db.query(TrustScore).filter(TrustScore.publication_id == pub.id).first()
+        kpt = db.query(KPT).filter(KPT.publication_id == pub.id).first()
+        breakdown.append({
+            "id": str(pub.id),
+            "title": pub.title,
+            "doi": pub.doi,
+            "kpt_id": kpt.kpt_id if kpt else None,
+            "trust_score": round(ts.score * 100) if ts and ts.score else None,
+            "vo_generated": 0,
+            "earnings_usd": 0.0,
+            "by_segment": {
+                "llm": 0.0,
+                "pharma": 0.0,
+                "legal": 0.0,
+                "other": 0.0,
+            },
+        })
+
+    return {
+        "publisher": publisher.name,
+        "revenue_share_pct": publisher.revenue_share_pct,
+        "total_publications": len(breakdown),
+        "total_vo": 0,
+        "total_earnings_usd": 0.0,
+        "breakdown": breakdown,
+    }
