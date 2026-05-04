@@ -24,7 +24,8 @@ def _sign_content(content_json: str) -> str:
     try:
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import padding
-        key_pem = os.environ.get("KAKAPO_PDF_SIGNING_KEY", "").replace("|", "\n").encode()
+        raw = os.environ.get("KAKAPO_PDF_SIGNING_KEY", "")
+        key_pem = raw.replace("\\n", "\n").replace("|", "\n").encode()
         if not key_pem.strip():
             return "NO_SIGNING_KEY"
         private_key = serialization.load_pem_private_key(key_pem, password=None)
