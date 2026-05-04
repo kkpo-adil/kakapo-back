@@ -64,11 +64,15 @@ SYSTEM_RAW = (
 
 
 def _extract_cited_kpts(answer_text: str, search_results: list) -> list[CitedKPT]:
+    if "Aucune source certifi" in answer_text or "non opposable" in answer_text:
+        return []
     pattern = r"(?:KPT|IKPT)-[A-Z0-9]{8,12}-v\d+"
     mentioned = set(re.findall(pattern, answer_text, re.IGNORECASE))
+    if not mentioned:
+        return []
     cited = []
     for r in search_results:
-        if r.kpt_id.upper() in {m.upper() for m in mentioned} or mentioned == set():
+        if r.kpt_id.upper() in {m.upper() for m in mentioned}:
             cited.append(CitedKPT(
                 kpt_id=r.kpt_id,
                 kpt_status=r.kpt_status,
