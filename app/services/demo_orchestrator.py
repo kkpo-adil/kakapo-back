@@ -65,29 +65,43 @@ SYSTEM_RAW = (
 
 
 def _extract_cited_kpts(answer_text: str, search_results: list) -> list[CitedKPT]:
-    if "Aucune source certifi" in answer_text or "non opposable" in answer_text:
-        return []
+    has_disclaimer = (
+        "Aucune source KAKAPO disponible" in answer_text
+        or "Aucune source certifi" in answer_text
+        or "non opposable" in answer_text
+    )
     pattern = r"(?:KPT|IKPT)-[A-Z0-9]{8,12}-v\d+"
     mentioned = set(re.findall(pattern, answer_text, re.IGNORECASE))
-    if not mentioned:
-        return []
+
     cited = []
     for r in search_results:
         if r.kpt_id.upper() in {m.upper() for m in mentioned}:
             cited.append(CitedKPT(
-                kpt_id=r.kpt_id,
-                kpt_status=r.kpt_status,
-                title=r.title,
-                publisher=r.publisher,
-                publication_date=r.publication_date,
-                doi=r.doi,
-                hash_kpt=r.hash_kpt,
-                trust_score=r.trust_score,
-                indexation_score=r.indexation_score,
-                source_label=r.source_label,
+                kpt_id=r.kpt_id, kpt_status=r.kpt_status, title=r.title,
+                publisher=r.publisher, publication_date=r.publication_date,
+                doi=r.doi, hash_kpt=r.hash_kpt, trust_score=r.trust_score,
+                indexation_score=r.indexation_score, source_label=r.source_label,
                 url_kakapo=r.url_kakapo,
             ))
-    return cited[:5]
+
+    if not cited and not has_disclaimer:
+        for r in search_results:
+            if r.kpt_status == "certified":
+                cited.append(CitedKPT(
+                    kpt_id=r.kpt_id, kpt_status=r.kpt_status, title=r.title,
+                    publisher=r.publisher, publication_date=r.publication_date,
+                    doi=r.doi, hash_kpt=r.hash_kpt, trust_score=r.trust_score,
+                    indexation_score=r.indexation_score, source_label=r.source_label,
+                    url_kakapo=r.url_kakapo,
+                ))
+
+    seen = set()
+    deduped = []
+    for c in cited:
+        if c.kpt_id not in seen:
+            seen.add(c.kpt_id)
+            deduped.append(c)
+    return deduped[:5]
 
 
 def run_demo_query(
