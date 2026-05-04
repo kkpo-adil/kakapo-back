@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from cachetools import TTLCache
 from app.database import get_db
+from app.routers.ingest import require_admin
 from app.schemas.demo import DemoQueryRequest, DemoExportRequest, DemoResult
 from app.services import demo_orchestrator, pdf_export
 
