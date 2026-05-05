@@ -25,9 +25,14 @@ def _sign_content(content_json: str) -> str:
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import padding
         raw = os.environ.get("KAKAPO_PDF_SIGNING_KEY", "")
-        key_pem = raw.replace("\\n", "\n").replace("|", "\n").encode()
-        if not key_pem.strip():
+        if not raw:
             return "NO_SIGNING_KEY"
+        cleaned = raw.strip()
+        if "\\n" in cleaned:
+            cleaned = cleaned.replace("\\n", "\n")
+        elif "\n" in cleaned and "-----" in cleaned:
+            cleaned = cleaned.replace("\n", "\n")
+        key_pem = cleaned.encode("utf-8")
         private_key = serialization.load_pem_private_key(key_pem, password=None)
         signature = private_key.sign(
             content_json.encode(),
@@ -36,9 +41,7 @@ def _sign_content(content_json: str) -> str:
         )
         return base64.b64encode(signature).decode()
     except Exception as e:
-        logger.warning(f"PDF signing failed: {e}")
-        return "SIGNING_UNAVAILABLE"
-
+        return f"SIGNING_ERROR: {e}"
 
 def generate_signed_pdf(result: DemoResult) -> tuple[bytes, SignedPDFInfo]:
     from reportlab.lib.pagesizes import A4
