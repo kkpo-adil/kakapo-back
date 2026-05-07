@@ -286,3 +286,19 @@ def patch_clinical_abstracts(db: Session = Depends(get_db), _: str = Depends(req
             updated += 1
     db.commit()
     return {"status": "ok", "updated": updated}
+
+@router.get("/test-signing")
+def test_signing(_: str = Depends(require_admin)):
+    import os
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding as apad
+    raw = os.environ.get("KAKAPO_PDF_SIGNING_KEY", "NO_KEY")
+    if raw == "NO_KEY":
+        return {"error": "key_missing"}
+    try:
+        key_pem = raw.replace("\\\\n", "\n").replace("\\n", "\n").encode()
+        private_key = serialization.load_pem_private_key(key_pem, password=None)
+        sig = private_key.sign(b"test", apad.PSS(mgf=apad.MGF1(hashes.SHA256()), salt_length=apad.PSS.MAX_LENGTH), hashes.SHA256())
+        return {"status": "ok", "sig_len": len(sig), "key_start": raw[:40], "key_len": len(raw)}
+    except Exception as e:
+        return {"error": str(e), "key_start": raw[:60], "key_len": len(raw)}
