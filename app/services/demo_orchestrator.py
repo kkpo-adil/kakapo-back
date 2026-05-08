@@ -109,28 +109,4 @@ def run_demo_query(
         answer_text = " ".join(
             b["text"] for b in resp.content if isinstance(b, dict) and b.get("type") == "text"
         )
-        if cited and db:
-            try:
-                from app.models.vo_transaction import VOTransaction, VOPartyType
-                import uuid as _uuid
-                for kpt_item in cited:
-                    try:
-                        pub_id = _uuid.UUID(kpt_item.url_kakapo.split("/")[-1])
-                    except Exception:
-                        pub_id = _uuid.uuid4()
-                    db.add(VOTransaction(
-                        id=_uuid.uuid4(),
-                        publication_id=pub_id,
-                        kpt_id=kpt_item.kpt_id,
-                        question=question[:500],
-                        consumer_segment="demo",
-                        total_amount_usd=0.40,
-                        kakapo_amount_usd=0.16,
-                        party_amount_usd=0.24,
-                        party_type=VOPartyType.scientist,
-                        party_id=None,
-                    ))
-                db.commit()
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning(f"VO transaction failed: {e}")
+        pass  # VO transactions disabled temporarily
