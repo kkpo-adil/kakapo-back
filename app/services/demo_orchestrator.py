@@ -111,123 +111,26 @@ def run_demo_query(
         )
         if cited and db:
             try:
-            from app.models.vo_transaction import VOTransaction, VOPartyType
-            import uuid as _uuid
-            for kpt in cited:
-                db.add(VOTransaction(
-                    id=_uuid.uuid4(),
-                    publication_id=_uuid.UUID(kpt.url_kakapo.split("/")[-1]) if "/" in kpt.url_kakapo else _uuid.uuid4(),
-                    kpt_id=kpt.kpt_id,
-                    question=question[:500],
-                    consumer_segment="demo",
-                    total_amount_usd=0.40,
-                    kakapo_amount_usd=0.16,
-                    party_amount_usd=0.24,
-                    party_type=VOPartyType.scientist,
-                    party_id=None,
-                ))
+                from app.models.vo_transaction import VOTransaction, VOPartyType
+                import uuid as _uuid
+                for kpt_item in cited:
+                    try:
+                        pub_id = _uuid.UUID(kpt_item.url_kakapo.split("/")[-1])
+                    except Exception:
+                        pub_id = _uuid.uuid4()
+                    db.add(VOTransaction(
+                        id=_uuid.uuid4(),
+                        publication_id=pub_id,
+                        kpt_id=kpt_item.kpt_id,
+                        question=question[:500],
+                        consumer_segment="demo",
+                        total_amount_usd=0.40,
+                        kakapo_amount_usd=0.16,
+                        party_amount_usd=0.24,
+                        party_type=VOPartyType.scientist,
+                        party_id=None,
+                    ))
                 db.commit()
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).warning(f"VO transaction failed: {e}")
-
-    return DemoResult(
-            question=question,
-            mode="raw",
-            answer_text=answer_text,
-            cited_kpts=[],
-            tool_calls_count=0,
-            latency_ms=int((time.time() - t0) * 1000),
-            estimated_cost_usd=resp.estimated_cost_usd,
-            input_tokens=resp.input_tokens,
-            output_tokens=resp.output_tokens,
-        )
-
-    messages = [{"role": "user", "content": question}]
-    force_tool = {"type": "tool", "name": "search_kakapo"}
-
-    for loop in range(max_loops):
-        resp = ac.chat_with_tools(
-            messages=messages,
-            tools=[TOOL_SEARCH_KAKAPO],
-            system=SYSTEM_KAKAPO,
-            tool_choice=force_tool if loop == 0 else None,
-        )
-        total_input += resp.input_tokens
-        total_output += resp.output_tokens
-        total_cost += resp.estimated_cost_usd
-
-        if resp.stop_reason == "end_turn":
-            messages.append({"role": "assistant", "content": resp.content})
-            break
-
-        if resp.stop_reason == "tool_use":
-            tool_calls_count += len(resp.tool_calls)
-            messages.append({"role": "assistant", "content": resp.content})
-            tool_results = []
-            for tc in resp.tool_calls:
-                if tc.name == "search_kakapo":
-                    results = kakapo_search.search(
-                        db=db,
-                        query=tc.input.get("query", question),
-                        limit=tc.input.get("limit", 5),
-                        kpt_status_filter=tc.input.get("kpt_status_filter", "all"),
-                    )
-                    all_search_results.extend(results)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tc.id,
-                        "content": json.dumps([r.model_dump() for r in results], default=str),
-                    })
-            messages.append({"role": "user", "content": tool_results})
-            force_tool = None
-
-    answer_text = ""
-    for msg in reversed(messages):
-        if isinstance(msg, dict) and msg.get("role") == "assistant":
-            content = msg.get("content", [])
-            if isinstance(content, list):
-                answer_text = " ".join(
-                    b["text"] for b in content
-                    if isinstance(b, dict) and b.get("type") == "text"
-                )
-            elif isinstance(content, str):
-                answer_text = content
-            if answer_text:
-                break
-
-    cited = _extract_cited_kpts(answer_text, all_search_results)
-
-    if cited and db:
-        try:
-            from app.models.vo_transaction import VOTransaction, VOPartyType
-            import uuid as _uuid
-            for kpt in cited:
-                db.add(VOTransaction(
-                    id=_uuid.uuid4(),
-                    publication_id=_uuid.UUID(kpt.url_kakapo.split("/")[-1]) if "/" in kpt.url_kakapo else _uuid.uuid4(),
-                    kpt_id=kpt.kpt_id,
-                    question=question[:500],
-                    consumer_segment="demo",
-                    total_amount_usd=0.40,
-                    kakapo_amount_usd=0.16,
-                    party_amount_usd=0.24,
-                    party_type=VOPartyType.scientist,
-                    party_id=None,
-                ))
-                db.commit()
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning(f"VO transaction failed: {e}")
-
-    return DemoResult(
-        question=question,
-        mode="kakapo",
-        answer_text=answer_text,
-        cited_kpts=cited,
-        tool_calls_count=tool_calls_count,
-        latency_ms=int((time.time() - t0) * 1000),
-        estimated_cost_usd=round(total_cost, 6),
-        input_tokens=int(total_input),
-        output_tokens=int(total_output),
-    )
