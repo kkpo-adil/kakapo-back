@@ -59,3 +59,5 @@ from app.routers import ingest
 app.include_router(ingest.router)
 from app.routers import demo
 app.include_router(demo.router)
+from app.routers import earnings
+app.include_router(earnings.router)
