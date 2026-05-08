@@ -25,3 +25,4 @@ from app.models.query_log import QueryLog, QueryResult
 from app.models.scientific_review import ScientificReview, ReviewFlag
 
 from app.models.contact_request import ContactRequest
+from app.models.vo_transaction import VOTransaction, VOPartyType

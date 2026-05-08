@@ -28,5 +28,5 @@ def get_db():
 
 
 def init_db():
-    from app.models import kpt, publication, trust_score, publication_relation  # noqa: F401
+    from app.models import kpt, publication, trust_score, publication_relation, vo_transaction  # noqa: F401
     Base.metadata.create_all(bind=engine)
