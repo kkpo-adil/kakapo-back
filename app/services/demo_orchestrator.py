@@ -109,4 +109,81 @@ def run_demo_query(
         answer_text = " ".join(
             b["text"] for b in resp.content if isinstance(b, dict) and b.get("type") == "text"
         )
-        pass  # VO transactions disabled temporarily
+        return DemoResult(
+            question=question,
+            mode="raw",
+            answer_text=answer_text,
+            cited_kpts=[],
+            tool_calls_count=0,
+            latency_ms=int((time.time() - t0) * 1000),
+            estimated_cost_usd=resp.estimated_cost_usd,
+            input_tokens=resp.input_tokens,
+            output_tokens=resp.output_tokens,
+        )
+
+    messages = [{"role": "user", "content": question}]
+    force_tool = {"type": "tool", "name": "search_kakapo"}
+
+    for loop in range(max_loops):
+        resp = ac.chat_with_tools(
+            messages=messages,
+            tools=[TOOL_SEARCH_KAKAPO],
+            system=SYSTEM_KAKAPO,
+            tool_choice=force_tool if loop == 0 else None,
+        )
+        total_input += resp.input_tokens
+        total_output += resp.output_tokens
+        total_cost += resp.estimated_cost_usd
+
+        if resp.stop_reason == "end_turn":
+            messages.append({"role": "assistant", "content": resp.content})
+            break
+
+        if resp.stop_reason == "tool_use":
+            tool_calls_count += len(resp.tool_calls)
+            messages.append({"role": "assistant", "content": resp.content})
+            tool_results = []
+            for tc in resp.tool_calls:
+                if tc.name == "search_kakapo":
+                    results = kakapo_search.search(
+                        db=db,
+                        query=tc.input.get("query", question),
+                        limit=tc.input.get("limit", 5),
+                        kpt_status_filter=tc.input.get("kpt_status_filter", "all"),
+                    )
+                    all_search_results.extend(results)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": json.dumps([r.model_dump() for r in results], default=str),
+                    })
+            messages.append({"role": "user", "content": tool_results})
+            force_tool = None
+
+    answer_text = ""
+    for msg in reversed(messages):
+        if isinstance(msg, dict) and msg.get("role") == "assistant":
+            content_blocks = msg.get("content", [])
+            if isinstance(content_blocks, list):
+                answer_text = " ".join(
+                    b["text"] for b in content_blocks
+                    if isinstance(b, dict) and b.get("type") == "text"
+                )
+            elif isinstance(content_blocks, str):
+                answer_text = content_blocks
+            if answer_text:
+                break
+
+    cited = _extract_cited_kpts(answer_text, all_search_results)
+
+    return DemoResult(
+        question=question,
+        mode="kakapo",
+        answer_text=answer_text,
+        cited_kpts=cited,
+        tool_calls_count=tool_calls_count,
+        latency_ms=int((time.time() - t0) * 1000),
+        estimated_cost_usd=round(total_cost, 6),
+        input_tokens=int(total_input),
+        output_tokens=int(total_output),
+    )
