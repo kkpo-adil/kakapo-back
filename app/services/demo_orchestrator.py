@@ -110,7 +110,7 @@ def run_demo_query(
             b["text"] for b in resp.content if isinstance(b, dict) and b.get("type") == "text"
         )
         if cited and db:
-        try:
+            try:
             from app.models.vo_transaction import VOTransaction, VOPartyType
             import uuid as _uuid
             for kpt in cited:
@@ -126,10 +126,10 @@ def run_demo_query(
                     party_type=VOPartyType.scientist,
                     party_id=None,
                 ))
-            db.commit()
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"VO transaction failed: {e}")
+                db.commit()
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"VO transaction failed: {e}")
 
     return DemoResult(
             question=question,
@@ -215,10 +215,10 @@ def run_demo_query(
                     party_type=VOPartyType.scientist,
                     party_id=None,
                 ))
-            db.commit()
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"VO transaction failed: {e}")
+                db.commit()
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"VO transaction failed: {e}")
 
     return DemoResult(
         question=question,
