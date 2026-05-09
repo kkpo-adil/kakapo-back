@@ -333,3 +333,35 @@ def debug_arxiv(_: str = Depends(require_admin)):
     except Exception as e:
         import traceback
         return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+@router.post("/europepmc")
+def ingest_europepmc(
+    query: str = "cancer immunotherapy",
+    max_results: int = 500,
+    fetch_full_text: bool = False,
+    year_from: int = 2015,
+    year_to: int = 2026,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    from app.services.europepmc_ingestor import ingest_batch
+    report = ingest_batch(
+        db=db,
+        query=query,
+        max_results=min(max_results, 1000),
+        fetch_full_text=fetch_full_text,
+        year_from=year_from,
+        year_to=year_to,
+    )
+    return report
+
+
+@router.get("/europepmc/debug")
+def debug_europepmc(_: str = Depends(require_admin)):
+    try:
+        from app.services.europepmc_client import search
+        results, cursor = search(query="cancer immunotherapy", max_results=2)
+        return {"status": "ok", "count": len(results), "first_title": results[0].title if results else None, "next_cursor": cursor}
+    except Exception as e:
+        import traceback
+        return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
