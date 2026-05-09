@@ -100,7 +100,12 @@ def ingest_batch(
                     ts = TrustScore(
                         id=uuid.uuid4(),
                         publication_id=pub_id,
-                        total_score=score,
+                        score=round(score / 100.0, 2),
+                        source_score=0.0,
+                        completeness_score=0.0,
+                        freshness_score=0.0,
+                        citation_score=0.0,
+                        dataset_score=0.0,
                         is_indexation_score=(kpt_status == "indexed"),
                     )
                     db.add(ts)
