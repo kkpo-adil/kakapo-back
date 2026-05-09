@@ -89,7 +89,7 @@ def ingest_batch(
                         id=uuid.uuid4(),
                         publication_id=pub_id,
                         kpt_id=kpt_id,
-                        hash_kpt=kpt_hash,
+                        content_hash=kpt_hash,
                         is_indexed=(kpt_status == "indexed"),
                         issued_at=datetime.now(timezone.utc),
                         version=1,
