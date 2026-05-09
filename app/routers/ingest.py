@@ -302,3 +302,24 @@ def test_signing(_: str = Depends(require_admin)):
         return {"status": "ok", "sig_len": len(sig), "key_start": raw[:40], "key_len": len(raw)}
     except Exception as e:
         return {"error": str(e), "key_start": raw[:60], "key_len": len(raw)}
+
+@router.post("/arxiv")
+def ingest_arxiv(
+    query: str = "machine learning",
+    max_results: int = 50,
+    categories: list[str] = None,
+    start: int = 0,
+    download_pdf: bool = False,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    from app.services.arxiv_ingestor import ingest_batch
+    report = ingest_batch(
+        db=db,
+        query=query,
+        max_results=min(max_results, 100),
+        categories=categories,
+        start=start,
+        download_pdf=download_pdf,
+    )
+    return report
