@@ -166,3 +166,4 @@ curl -X POST http://localhost:8000/trust/score/<publication_id>
 - [ ] Score de contradiction (analyse croisée)
 - [ ] Worker asynchrone pour traitement lourd (ARQ/Celery)
 - [ ] Migrations Alembic
+# force deploy Dim 10 mai 2026 00:30:15 CEST
