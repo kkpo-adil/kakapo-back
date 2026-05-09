@@ -323,3 +323,13 @@ def ingest_arxiv(
         download_pdf=download_pdf,
     )
     return report
+
+@router.get("/arxiv/debug")
+def debug_arxiv(_: str = Depends(require_admin)):
+    try:
+        from app.services.arxiv_client import search
+        results = search(query="transformer", max_results=2)
+        return {"status": "ok", "count": len(results), "first_title": results[0].title if results else None}
+    except Exception as e:
+        import traceback
+        return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
