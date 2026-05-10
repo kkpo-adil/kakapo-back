@@ -199,7 +199,7 @@ def run_demo_query(
                     results = kakapo_search.search(
                         db=db,
                         query=tc.input.get("query", question),
-                        limit=tc.input.get("limit", 5),
+                        limit=tc.input.get("limit", 10),
                         kpt_status_filter=tc.input.get("kpt_status_filter", "all"),
                     )
                     all_search_results.extend(results)
