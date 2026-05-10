@@ -33,6 +33,57 @@ class SearchResult(BaseModel):
     model_config = {"from_attributes": True}
 
 
+FRENCH_TO_ENGLISH = {
+    "cancer": "cancer",
+    "sein": "breast",
+    "triple négatif": "triple negative",
+    "triple negatif": "triple negative",
+    "poumon": "lung",
+    "côlon": "colon",
+    "colon": "colon",
+    "prostate": "prostate",
+    "ovaire": "ovary ovarian",
+    "pancréas": "pancreas pancreatic",
+    "foie": "liver hepatic",
+    "rein": "kidney renal",
+    "cerveau": "brain glioma",
+    "leucémie": "leukemia",
+    "leucemie": "leukemia",
+    "lymphome": "lymphoma",
+    "mélanome": "melanoma",
+    "melanome": "melanoma",
+    "immunothérapie": "immunotherapy",
+    "immunotherapie": "immunotherapy",
+    "chimiothérapie": "chemotherapy",
+    "chimiotherapie": "chemotherapy",
+    "essai clinique": "clinical trial",
+    "phase 3": "phase 3",
+    "insuffisance cardiaque": "heart failure",
+    "diabète": "diabetes",
+    "diabete": "diabetes",
+    "alzheimer": "alzheimer",
+    "parkinson": "parkinson",
+    "résultats": "results outcomes",
+    "resultats": "results outcomes",
+    "traitement": "treatment therapy",
+    "efficacité": "efficacy",
+    "efficacite": "efficacy",
+}
+
+def _translate_query(query: str) -> list[str]:
+    queries = [query]
+    q_lower = query.lower()
+    translated = q_lower
+    for fr, en in FRENCH_TO_ENGLISH.items():
+        translated = translated.replace(fr, en)
+    if translated != q_lower:
+        queries.append(translated)
+    words = [w for w in translated.split() if len(w) > 3]
+    if words:
+        queries.append(" ".join(words))
+    return list(dict.fromkeys(queries))
+
+
 def search(
     db: Session,
     query: str,
