@@ -571,3 +571,52 @@ def enrich_fulltext_batch(
 
     db.commit()
     return {"updated": updated, "failed": failed, "total": len(pubs)}
+
+@router.post("/openalex")
+def ingest_openalex(
+    query: str = "cancer immunotherapy",
+    max_results: int = 100,
+    year_from: int = 2018,
+    year_to: int = 2026,
+    cursor: str = "*",
+    fetch_full_text: bool = True,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    from app.services.openalex_ingestor import ingest_batch
+    report = ingest_batch(
+        db=db,
+        query=query,
+        max_results=min(max_results, 200),
+        year_from=year_from,
+        year_to=year_to,
+        cursor=cursor,
+        fetch_full_text=fetch_full_text,
+    )
+    return report
+
+
+@router.get("/openalex/debug")
+def debug_openalex(_: str = Depends(require_admin)):
+    try:
+        from app.services.openalex_client import search
+        results, cursor = search(
+            query="pembrolizumab breast cancer",
+            max_results=2,
+            filter_open_access=True,
+        )
+        return {
+            "status": "ok",
+            "results_found": len(results),
+            "first_title": results[0].title if results else None,
+            "first_doi": results[0].doi if results else None,
+            "first_keywords": results[0].keywords[:5] if results else None,
+            "first_concepts": results[0].concepts[:5] if results else None,
+            "first_citations": results[0].citations_count if results else None,
+            "first_is_oa": results[0].is_open_access if results else None,
+            "first_oa_url": results[0].oa_url if results else None,
+            "next_cursor": cursor,
+        }
+    except Exception as e:
+        import traceback
+        return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
