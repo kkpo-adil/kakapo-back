@@ -180,6 +180,12 @@ def run_demo_query(
 
         if resp.stop_reason == "end_turn":
             messages.append({"role": "assistant", "content": resp.content})
+            answer_text = " ".join(
+                b["text"] if isinstance(b, dict) else (b.text if hasattr(b, "text") else "")
+                for b in resp.content
+                if (isinstance(b, dict) and b.get("type") == "text") or
+                   (hasattr(b, "type") and b.type == "text")
+            )
             break
 
         if resp.stop_reason == "tool_use":
@@ -203,19 +209,21 @@ def run_demo_query(
             messages.append({"role": "user", "content": tool_results})
             force_tool = None
 
-    answer_text = ""
-    for msg in reversed(messages):
-        if isinstance(msg, dict) and msg.get("role") == "assistant":
-            content_blocks = msg.get("content", [])
-            if isinstance(content_blocks, list):
-                answer_text = " ".join(
-                    b["text"] for b in content_blocks
-                    if isinstance(b, dict) and b.get("type") == "text"
-                )
-            elif isinstance(content_blocks, str):
-                answer_text = content_blocks
-            if answer_text:
-                break
+    if not answer_text:
+        for msg in reversed(messages):
+            if isinstance(msg, dict) and msg.get("role") == "assistant":
+                content_blocks = msg.get("content", [])
+                if isinstance(content_blocks, list):
+                    answer_text = " ".join(
+                        (b["text"] if isinstance(b, dict) else (b.text if hasattr(b, "text") else ""))
+                        for b in content_blocks
+                        if (isinstance(b, dict) and b.get("type") == "text") or
+                           (hasattr(b, "type") and b.type == "text")
+                    )
+                elif isinstance(content_blocks, str):
+                    answer_text = content_blocks
+                if answer_text:
+                    break
 
     cited = _extract_cited_kpts(answer_text, all_search_results)
 
