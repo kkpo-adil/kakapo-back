@@ -365,3 +365,39 @@ def debug_europepmc(_: str = Depends(require_admin)):
     except Exception as e:
         import traceback
         return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+@router.post("/enrich-keywords")
+def enrich_keywords_batch(
+    batch_size: int = 100,
+    source_origin: str = "europepmc",
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    from app.services.europepmc_client import search as epmc_search
+    import json
+    pubs = db.query(Publication).filter(
+        Publication.keywords_json == None,
+        Publication.source_origin == source_origin,
+        Publication.hal_id != None,
+    ).limit(batch_size).all()
+    
+    updated = 0
+    failed = 0
+    for pub in pubs:
+        try:
+            if not pub.hal_id:
+                continue
+            uid = pub.hal_id.replace("epmc:", "")
+            results, _ = epmc_search(
+                query=pub.title[:100],
+                max_results=1,
+                filter_open_access=False,
+            )
+            if results and results[0].keywords:
+                pub.keywords_json = json.dumps(results[0].keywords)
+                updated += 1
+        except Exception as e:
+            failed += 1
+            continue
+    db.commit()
+    return {"updated": updated, "failed": failed, "total": len(pubs)}
