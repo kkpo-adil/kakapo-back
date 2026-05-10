@@ -36,6 +36,7 @@ class Publication(Base):
     source_origin: Mapped[str] = mapped_column(String(64), nullable=False, server_default="direct_deposit", index=True)
     hal_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True, unique=True)
     opted_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    keywords_json: Mapped[str | None] = mapped_column(Text, nullable=True, comment="JSON array of keywords from source")
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

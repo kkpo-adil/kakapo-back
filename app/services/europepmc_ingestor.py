@@ -91,6 +91,7 @@ def ingest_batch(
                         except Exception:
                             submitted_at = None
 
+                        import json as _json
                         pub = Publication(
                             id=pub_id,
                             title=result.title[:512],
@@ -104,6 +105,7 @@ def ingest_batch(
                             source_origin="europepmc",
                             hal_id=uid,
                             file_hash=content_hash if kpt_status == "certified" else None,
+                            keywords_json=_json.dumps(result.keywords) if result.keywords else None,
                         )
                         db.add(pub)
 
