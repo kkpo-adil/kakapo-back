@@ -487,3 +487,14 @@ def full_stats(db: Session = Depends(get_db), _: str = Depends(require_admin)):
         "total": total_certified + total_indexed,
         "by_source": by_source,
     }
+
+
+@router.post("/fix-schema")
+def fix_schema(db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    try:
+        from sqlalchemy import text
+        db.execute(text("ALTER TABLE publications ADD COLUMN IF NOT EXISTS keywords_json TEXT"))
+        db.commit()
+        return {"status": "ok", "message": "keywords_json column added"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
