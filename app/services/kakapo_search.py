@@ -19,6 +19,7 @@ class SearchResult(BaseModel):
     source_origin: str
     title: str
     abstract: str | None
+    full_text: str | None = None
     authors: list[str]
     doi: str | None
     publisher: str | None
@@ -136,7 +137,8 @@ def search(
             kpt_status=pub.kpt_status or "indexed",
             source_origin=pub.source_origin or "direct_deposit",
             title=pub.title or "",
-            abstract=(pub.abstract or "")[:500],
+            abstract=(pub.abstract or "")[:2000],
+            full_text=(pub.abstract or "")[2000:8000] if pub.abstract and len(pub.abstract) > 2000 else None,
             authors=authors,
             doi=pub.doi,
             publisher=pub.institution_raw,
