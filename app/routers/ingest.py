@@ -498,3 +498,76 @@ def fix_schema(db: Session = Depends(get_db), _: str = Depends(require_admin)):
         return {"status": "ok", "message": "keywords_json column added"}
     except Exception as e:
         return {"status": "error", "error": str(e)}
+
+@router.post("/enrich-fulltext")
+def enrich_fulltext_batch(
+    batch_size: int = 20,
+    source_origin: str = "europepmc",
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    from app.services.full_text_extractor import extract_full_text
+    from sqlalchemy import text as sa_text
+    import json
+
+    pubs = db.query(Publication).filter(
+        Publication.kpt_status == "certified",
+        Publication.source_origin == source_origin,
+        Publication.opted_out_at == None,
+    ).filter(
+        db.query(Publication.id).filter(
+            Publication.id == Publication.id,
+        ).exists()
+    ).limit(batch_size).all()
+
+    pubs = db.execute(
+        sa_text("""
+            SELECT id, doi, hal_id, source_origin
+            FROM publications
+            WHERE kpt_status = 'certified'
+            AND source_origin = :source
+            AND opted_out_at IS NULL
+            AND (
+                abstract IS NULL
+                OR length(abstract) < 500
+            )
+            LIMIT :limit
+        """),
+        {"source": source_origin, "limit": batch_size}
+    ).fetchall()
+
+    updated = 0
+    failed = 0
+
+    for row in pubs:
+        try:
+            pub_id = row[0]
+            doi = row[1]
+            hal_id = row[2]
+
+            pmcid = None
+            if hal_id and hal_id.startswith("epmc:"):
+                pmcid = hal_id.replace("epmc:", "")
+
+            full_text, text_hash = extract_full_text(
+                doi=doi,
+                pmcid=pmcid,
+            )
+
+            if full_text and len(full_text) > 500:
+                db.execute(
+                    sa_text("""
+                        UPDATE publications
+                        SET abstract = :abstract
+                        WHERE id = :id
+                        AND (abstract IS NULL OR length(abstract) < 500)
+                    """),
+                    {"abstract": full_text[:10000], "id": str(pub_id)}
+                )
+                updated += 1
+        except Exception as e:
+            failed += 1
+            logger.warning(f"enrich_fulltext failed for {row[0]}: {e}")
+
+    db.commit()
+    return {"updated": updated, "failed": failed, "total": len(pubs)}
