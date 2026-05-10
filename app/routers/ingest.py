@@ -53,8 +53,14 @@ def ingest_hal(body: IngestRequest, db: Session = Depends(get_db), _: str = Depe
 
 @router.get("/hal/status")
 def ingest_status(db: Session = Depends(get_db), _: str = Depends(require_admin)):
-    total_indexed = db.query(func.count(Publication.id)).filter(Publication.kpt_status == "indexed").scalar()
-    total_certified = db.query(func.count(Publication.id)).filter(Publication.kpt_status == "certified").scalar()
+    total_indexed = db.query(func.count(Publication.id)).filter(
+        Publication.kpt_status == "indexed",
+        Publication.opted_out_at == None,
+    ).scalar() or 0
+    total_certified = db.query(func.count(Publication.id)).filter(
+        Publication.kpt_status == "certified",
+        Publication.opted_out_at == None,
+    ).scalar() or 0
 
     domain_rows = (
         db.query(Publication.institution_raw, func.count(Publication.id))
