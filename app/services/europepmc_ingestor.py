@@ -60,7 +60,8 @@ def ingest_batch(
             try:
                 for result in batch:
                     try:
-                        uid = f"epmc:{result.pmcid or result.pmid or result.doi}"
+                        uid_raw = result.pmcid or result.pmid or result.doi or result.title[:50]
+                        uid = f"epmc:{uid_raw}"
                         existing = db.query(Publication).filter(
                             Publication.hal_id == uid
                         ).first()
