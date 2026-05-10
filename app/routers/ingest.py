@@ -448,3 +448,42 @@ def debug_pubmed(_: str = Depends(require_admin)):
     except Exception as e:
         import traceback
         return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+@router.get("/stats/full")
+def full_stats(db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    from sqlalchemy import func, case
+    results = db.query(
+        Publication.source_origin,
+        Publication.kpt_status,
+        func.count(Publication.id).label("count")
+    ).filter(
+        Publication.opted_out_at == None
+    ).group_by(
+        Publication.source_origin,
+        Publication.kpt_status
+    ).all()
+    
+    total_certified = 0
+    total_indexed = 0
+    by_source = {}
+    
+    for row in results:
+        source = row.source_origin or "unknown"
+        status = row.kpt_status
+        count = row.count
+        
+        if source not in by_source:
+            by_source[source] = {"certified": 0, "indexed": 0}
+        by_source[source][status] = count
+        
+        if status == "certified":
+            total_certified += count
+        else:
+            total_indexed += count
+    
+    return {
+        "total_certified": total_certified,
+        "total_indexed": total_indexed,
+        "total": total_certified + total_indexed,
+        "by_source": by_source,
+    }
