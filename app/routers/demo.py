@@ -2,7 +2,7 @@ import os
 import hashlib
 import logging
 import time
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from cachetools import TTLCache
@@ -12,6 +12,7 @@ from app.schemas.demo import DemoQueryRequest, DemoExportRequest, DemoResult
 from app.services import demo_orchestrator, pdf_export
 
 logger = logging.getLogger(__name__)
+_async_jobs: dict = {}
 router = APIRouter(prefix="/demo", tags=["Demo"])
 
 _cache: TTLCache = TTLCache(maxsize=256, ttl=300)
@@ -94,3 +95,36 @@ def demo_export(body: DemoExportRequest, db: Session = Depends(get_db)):
 def clear_cache(_: str = Depends(require_admin)):
     _cache.clear()
     return {"status": "ok", "message": "Cache cleared"}
+
+@router.post("/query/async")
+async def demo_query_async(
+    body: DemoQueryRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    import uuid as _uuid
+    job_id = str(_uuid.uuid4())
+    _async_jobs[job_id] = {"status": "processing", "result": None}
+    
+    async def run():
+        try:
+            result = await orchestrator.run_demo_query(
+                question=body.question,
+                with_kakapo=body.with_kakapo,
+                db=db,
+            )
+            _async_jobs[job_id] = {"status": "done", "result": result.model_dump()}
+        except Exception as e:
+            _async_jobs[job_id] = {"status": "error", "error": str(e)}
+    
+    background_tasks.add_task(run)
+    return {"job_id": job_id, "status": "processing"}
+
+
+@router.get("/query/async/{job_id}")
+def demo_query_result(job_id: str):
+    job = _async_jobs.get(job_id)
+    if not job:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
