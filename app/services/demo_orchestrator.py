@@ -9,6 +9,38 @@ from app.schemas.demo import DemoResult, CitedKPT
 
 logger = logging.getLogger(__name__)
 
+TOOL_EXPAND_QUERY = {
+    "name": "expand_search_query",
+    "description": (
+        "Before searching KAKAPO, expand and translate the user query "
+        "into optimal search terms. Convert French to English, fix typos, "
+        "add medical synonyms, abbreviations, and related terms. "
+        "Return a JSON object with: "
+        "{'expanded_query': 'main search terms in English', "
+        "'synonyms': ['term1', 'term2', ...], "
+        "'language': 'fr|en'}"
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "original_query": {
+                "type": "string",
+                "description": "The original user question"
+            },
+            "expanded_query": {
+                "type": "string",
+                "description": "Optimized search terms in English"
+            },
+            "synonyms": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Medical synonyms and related terms"
+            }
+        },
+        "required": ["original_query", "expanded_query", "synonyms"]
+    }
+}
+
 TOOL_SEARCH_KAKAPO = {
     "name": "search_kakapo",
     "description": (
@@ -39,8 +71,20 @@ SYSTEM_KAKAPO = (
     "a cryptographic provenance infrastructure for scientific publications. "
     "Your role is to REASON deeply on publications retrieved via search_kakapo "
     "to answer scientific and medical questions.\n\n"
+    "QUERY EXPANSION — CRITICAL STEP:\n"
+    "Before calling search_kakapo, you MUST mentally translate and expand "
+    "the user query into optimal English medical/scientific search terms.\n"
+    "Examples:\n"
+    "- 'cœur artificiel' → search 'artificial heart LVAD ventricular assist device'\n"
+    "- 'cancer du sein' → search 'breast cancer mammary carcinoma'\n"
+    "- 'insuffisance cardiaque' → search 'heart failure cardiac dysfunction'\n"
+    "- 'ceur artificiel' (typo) → search 'artificial heart LVAD'\n"
+    "- Always search in ENGLISH regardless of the question language.\n"
+    "- Use medical abbreviations: TNBC, NSCLC, HF, DM, HTN, etc.\n"
+    "- Include brand names AND generic names: 'pembrolizumab Keytruda'\n"
+    "- Include trial names: 'KEYNOTE-355 pembrolizumab breast'\n\n"
     "STRICT RULES:\n"
-    "1. ALWAYS call search_kakapo FIRST. No exceptions.\n"
+    "1. ALWAYS call search_kakapo FIRST with expanded English terms.\n"
     "2. Cite ONLY publications returned by search_kakapo. NEVER "
     "fabricate KPT identifiers, DOIs, hashes, or any metadata.\n"
     "3. Each citation must reference the kpt_id and kpt_status.\n"
