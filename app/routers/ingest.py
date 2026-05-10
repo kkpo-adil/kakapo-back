@@ -401,3 +401,44 @@ def enrich_keywords_batch(
             continue
     db.commit()
     return {"updated": updated, "failed": failed, "total": len(pubs)}
+
+@router.post("/pubmed")
+def ingest_pubmed(
+    query: str = "cancer immunotherapy",
+    max_results: int = 100,
+    year_from: int = 2018,
+    year_to: int = 2026,
+    start: int = 0,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    from app.services.pubmed_ingestor import ingest_batch
+    report = ingest_batch(
+        db=db,
+        query=query,
+        max_results=min(max_results, 500),
+        year_from=year_from,
+        year_to=year_to,
+        start=start,
+    )
+    return report
+
+
+@router.get("/pubmed/debug")
+def debug_pubmed(_: str = Depends(require_admin)):
+    try:
+        from app.services.pubmed_client import search_ids, fetch_articles
+        ids = search_ids(query="pembrolizumab breast cancer", max_results=2)
+        articles = fetch_articles(ids)
+        return {
+            "status": "ok",
+            "ids_found": len(ids),
+            "articles_parsed": len(articles),
+            "first_title": articles[0].title if articles else None,
+            "first_keywords": articles[0].keywords[:5] if articles else None,
+            "first_mesh": articles[0].mesh_terms[:5] if articles else None,
+            "has_full_text": bool(articles[0].full_text) if articles else None,
+        }
+    except Exception as e:
+        import traceback
+        return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
