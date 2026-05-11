@@ -153,7 +153,29 @@ def run_demo_query(
             messages.append({"role": "user", "content": tool_results})
             force_tool = None
 
-    answer_text = ""
+    if not answer_text:
+        if all_search_results:
+            results_summary = json.dumps(
+                [r.model_dump() for r in all_search_results[:5]], default=str
+            )
+            final_resp = ac.chat_simple(
+                messages=[
+                    {"role": "user", "content": question},
+                    {"role": "assistant", "content": f"I found these certified sources: {results_summary}"},
+                    {"role": "user", "content": "Based on these certified KAKAPO sources, provide a complete structured answer in the user's language. Cite each source with its kpt_id."}
+                ],
+                system=SYSTEM_KAKAPO,
+            )
+            answer_text = " ".join(
+                b.text if hasattr(b, "text") else b.get("text", "")
+                for b in final_resp.content
+                if (hasattr(b, "type") and b.type == "text") or
+                   (isinstance(b, dict) and b.get("type") == "text")
+            )
+            total_cost += final_resp.estimated_cost_usd
+            total_input += final_resp.input_tokens
+            total_output += final_resp.output_tokens
+
     for msg in reversed(messages):
         if isinstance(msg, dict) and msg.get("role") == "assistant":
             blocks = msg.get("content", [])
