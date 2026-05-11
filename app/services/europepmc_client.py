@@ -30,6 +30,19 @@ class EPMCResult:
     keywords: list[str] = field(default_factory=list)
     full_text: Optional[str] = None
     full_text_hash: Optional[str] = None
+    citations_count: int = 0
+    language: Optional[str] = None
+    article_type: Optional[str] = None
+    license: Optional[str] = None
+    has_pdf: bool = False
+    has_supplementary: bool = False
+    has_references: bool = False
+    grants: list[dict] = field(default_factory=list)
+    orcid_authors: list[dict] = field(default_factory=list)
+    mesh_terms: list[str] = field(default_factory=list)
+    pub_model: Optional[str] = None
+    first_publication_date: Optional[str] = None
+    full_text_urls: list[str] = field(default_factory=list)
 
 
 def _get(url: str, params: dict) -> dict:
@@ -65,17 +78,71 @@ def _get(url: str, params: dict) -> dict:
 
 def _parse_result(item: dict) -> EPMCResult:
     authors = []
+    orcid_authors = []
     author_list = item.get("authorList", {})
     if isinstance(author_list, dict):
         for a in author_list.get("author", []):
             name = a.get("fullName") or f"{a.get('lastName', '')} {a.get('firstName', '')}".strip()
             if name:
                 authors.append(name)
+            orcid = None
+            author_id = a.get("authorId", {})
+            if isinstance(author_id, dict) and author_id.get("type") == "ORCID":
+                orcid = author_id.get("value")
+            affiliation = ""
+            aff_list = a.get("authorAffiliationDetailsList", {})
+            if isinstance(aff_list, dict):
+                affs = aff_list.get("authorAffiliation", [])
+                if affs and isinstance(affs, list):
+                    affiliation = affs[0].get("affiliation", "")
+            orcid_authors.append({
+                "name": name,
+                "orcid": orcid,
+                "affiliation": affiliation,
+            })
 
     keywords = []
     kw_list = item.get("keywordList", {})
     if isinstance(kw_list, dict):
-        keywords = kw_list.get("keyword", [])
+        keywords = [k for k in kw_list.get("keyword", []) if k]
+
+    mesh_terms = []
+    mesh_list = item.get("meshHeadingList", {})
+    if isinstance(mesh_list, dict):
+        for mesh in mesh_list.get("meshHeading", []):
+            term = mesh.get("descriptorName")
+            if term:
+                mesh_terms.append(term)
+
+    grants = []
+    grants_list = item.get("grantsList", {})
+    if isinstance(grants_list, dict):
+        for g in grants_list.get("grant", []):
+            grants.append({
+                "id": g.get("grantId"),
+                "agency": g.get("agency"),
+                "country": g.get("country"),
+            })
+
+    article_types = []
+    pub_type_list = item.get("pubTypeList", {})
+    if isinstance(pub_type_list, dict):
+        article_types = pub_type_list.get("pubType", [])
+    article_type = article_types[0] if article_types else None
+
+    full_text_urls = []
+    ft_url_list = item.get("fullTextUrlList", {})
+    if isinstance(ft_url_list, dict):
+        for ft in ft_url_list.get("fullTextUrl", []):
+            url = ft.get("url")
+            if url:
+                full_text_urls.append(url)
+
+    journal_info = item.get("journalInfo", {})
+    journal = (
+        item.get("journalTitle") or
+        (journal_info.get("journal", {}).get("title") if isinstance(journal_info, dict) else None)
+    )
 
     return EPMCResult(
         pmid=item.get("pmid"),
@@ -85,10 +152,23 @@ def _parse_result(item: dict) -> EPMCResult:
         authors=authors,
         doi=item.get("doi"),
         published=item.get("firstPublicationDate") or item.get("pubYear"),
-        journal=item.get("journalTitle") or item.get("journalInfo", {}).get("journal", {}).get("title"),
+        journal=journal,
         source=item.get("source", "MED"),
         is_open_access=item.get("isOpenAccess", "N") == "Y",
         keywords=keywords,
+        citations_count=item.get("citedByCount", 0) or 0,
+        language=item.get("language"),
+        article_type=article_type,
+        license=item.get("license"),
+        has_pdf=item.get("hasPDF", "N") == "Y",
+        has_supplementary=item.get("hasSuppl", "N") == "Y",
+        has_references=item.get("hasReferences", "N") == "Y",
+        grants=grants,
+        orcid_authors=orcid_authors,
+        mesh_terms=mesh_terms,
+        pub_model=item.get("pubModel"),
+        first_publication_date=item.get("firstPublicationDate"),
+        full_text_urls=full_text_urls,
     )
 
 
