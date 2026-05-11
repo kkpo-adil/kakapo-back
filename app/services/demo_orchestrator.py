@@ -113,6 +113,7 @@ def run_demo_query(
 
     messages = [{"role": "user", "content": question}]
     force_tool = {"type": "tool", "name": "search_kakapo"}
+    debug_queries = []
 
     for loop in range(max_loops):
         resp = ac.chat_with_tools(
