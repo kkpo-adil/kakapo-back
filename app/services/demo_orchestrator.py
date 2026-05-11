@@ -156,15 +156,18 @@ def run_demo_query(
     answer_text = ""
     for msg in reversed(messages):
         if isinstance(msg, dict) and msg.get("role") == "assistant":
-            content = msg.get("content", [])
-            if isinstance(content, list):
-                answer_text = " ".join(
-                    b["text"] for b in content
-                    if isinstance(b, dict) and b.get("type") == "text"
-                )
-            elif isinstance(content, str):
-                answer_text = content
-            if answer_text:
+            blocks = msg.get("content", [])
+            if isinstance(blocks, str):
+                answer_text = blocks
+            elif isinstance(blocks, list):
+                parts = []
+                for b in blocks:
+                    if isinstance(b, dict) and b.get("type") == "text":
+                        parts.append(b["text"])
+                    elif hasattr(b, "type") and b.type == "text":
+                        parts.append(b.text)
+                answer_text = " ".join(parts)
+            if answer_text.strip():
                 break
 
     cited = _extract_cited_kpts(answer_text, all_search_results)
