@@ -118,7 +118,7 @@ def search(
 
     q = q.order_by(
         (Publication.kpt_status == "certified").desc(),
-        TrustScore.score.desc().nulls_last(),
+        Publication.submitted_at.desc().nulls_last(),
     ).limit(limit)
 
     rows = q.all()
