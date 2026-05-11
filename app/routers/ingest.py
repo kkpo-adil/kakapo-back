@@ -620,3 +620,37 @@ def debug_openalex(_: str = Depends(require_admin)):
     except Exception as e:
         import traceback
         return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+
+@router.post("/fix-fulltext-schema")
+def fix_fulltext_schema(db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    from sqlalchemy import text
+    columns = [
+        "full_text TEXT",
+        "references_json TEXT",
+        "citations_count INTEGER",
+        "downloads_count INTEGER",
+        "views_count INTEGER",
+        "altmetric_score FLOAT",
+        "impact_factor FLOAT",
+        "mesh_terms_json TEXT",
+        "concepts_json TEXT",
+        "funding_json TEXT",
+        "orcid_authors_json TEXT",
+        "license TEXT",
+        "language TEXT",
+        "article_type TEXT",
+        "figures_count INTEGER",
+        "tables_count INTEGER",
+        "supplementary_json TEXT",
+    ]
+    added = []
+    errors = []
+    for col in columns:
+        try:
+            db.execute(text(f"ALTER TABLE publications ADD COLUMN IF NOT EXISTS {col}"))
+            added.append(col.split()[0])
+        except Exception as e:
+            errors.append(str(e))
+    db.commit()
+    return {"status": "ok", "added": added, "errors": errors}
