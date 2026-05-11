@@ -170,9 +170,11 @@ def run_demo_query(
     for msg in messages:
         if isinstance(msg, dict) and msg.get("role") == "assistant":
             for block in (msg.get("content") or []):
-                b = block if isinstance(block, dict) else (block.__dict__ if hasattr(block, "__dict__") else {})
-                if b.get("type") == "tool_use" and b.get("name") == "search_kakapo":
-                    debug_queries.append(b.get("input", {}).get("query", "?"))
+                if isinstance(block, dict):
+                    if block.get("type") == "tool_use" and block.get("name") == "search_kakapo":
+                        debug_queries.append(block.get("input", {}).get("query", "?"))
+                elif hasattr(block, "type") and block.type == "tool_use" and block.name == "search_kakapo":
+                    debug_queries.append(block.input.get("query", "?") if isinstance(block.input, dict) else str(block.input))
 
     return DemoResult(
         question=question,
