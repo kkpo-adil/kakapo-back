@@ -121,7 +121,7 @@ def search(
         Publication.submitted_at.desc().nulls_last(),
     ).limit(limit)
 
-    rows = q.all()
+
     results = []
     for pub, kpt, ts in rows:
         authors_raw = pub.authors_raw or ""
