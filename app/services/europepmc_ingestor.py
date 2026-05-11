@@ -9,6 +9,7 @@ from app.models.publication import Publication
 from app.models.kpt import KPT
 from app.models.trust_score import TrustScore
 from app.services import europepmc_client
+from app.services.full_text_extractor import extract_full_text
 
 logger = logging.getLogger(__name__)
 
@@ -92,10 +93,28 @@ def ingest_batch(
                             submitted_at = None
 
                         import json as _json
+
+                        if not full_text and fetch_full_text:
+                            if hasattr(result, 'full_text_urls') and result.full_text_urls:
+                                for ft_url in result.full_text_urls[:3]:
+                                    full_text, content_hash = extract_full_text(article_url=ft_url, doi=result.doi)
+                                    if full_text:
+                                        kpt_status = "certified"
+                                        break
+                            if not full_text and result.doi:
+                                full_text, content_hash = extract_full_text(doi=result.doi, pmcid=result.pmcid)
+                                if full_text:
+                                    kpt_status = "certified"
+
+                        if not content_hash:
+                            raw = f"{result.pmid or ''}{result.title}"
+                            content_hash = hashlib.sha256(raw.encode()).hexdigest()
+
                         pub = Publication(
                             id=pub_id,
                             title=result.title[:512],
                             abstract=result.abstract[:5000] if result.abstract else None,
+                            full_text=full_text[:2000000] if full_text else None,
                             source="europepmc",
                             doi=result.doi,
                             authors_raw=str(result.authors[:10]),
@@ -106,6 +125,13 @@ def ingest_batch(
                             hal_id=uid,
                             file_hash=content_hash if kpt_status == "certified" else None,
                             keywords_json=_json.dumps(result.keywords) if result.keywords else None,
+                            mesh_terms_json=_json.dumps(result.mesh_terms) if getattr(result, 'mesh_terms', None) else None,
+                            citations_count=getattr(result, 'citations_count', 0) or 0,
+                            language=getattr(result, 'language', None),
+                            article_type=getattr(result, 'article_type', None),
+                            license=getattr(result, 'license', None),
+                            funding_json=_json.dumps(result.grants) if getattr(result, 'grants', None) else None,
+                            orcid_authors_json=_json.dumps(result.orcid_authors) if getattr(result, 'orcid_authors', None) else None,
                         )
                         db.add(pub)
 
