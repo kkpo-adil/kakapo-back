@@ -116,11 +116,10 @@ def search(
     if term_filters:
         q = q.filter(or_(*term_filters))
 
-    q = q.order_by(
+    rows = q.order_by(
         (Publication.kpt_status == "certified").desc(),
         Publication.submitted_at.desc().nulls_last(),
-    ).limit(limit)
-
+    ).limit(limit).all()
 
     results = []
     for pub, kpt, ts in rows:
