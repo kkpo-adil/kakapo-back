@@ -113,7 +113,6 @@ def run_demo_query(
 
     messages = [{"role": "user", "content": question}]
     force_tool = {"type": "tool", "name": "search_kakapo"}
-    debug_queries = []
 
     for loop in range(max_loops):
         resp = ac.chat_with_tools(
@@ -136,11 +135,9 @@ def run_demo_query(
             tool_results = []
             for tc in resp.tool_calls:
                 if tc.name == "search_kakapo":
-                    _query = tc.input.get("query", question) if isinstance(tc.input, dict) else question
-                    debug_queries.append(_query)
                     results = kakapo_search.search(
                         db=db,
-                        query=_query,
+                        query=tc.input.get("query", question),
                         limit=tc.input.get("limit", 5),
                         kpt_status_filter=tc.input.get("kpt_status_filter", "all"),
                     )
@@ -153,56 +150,21 @@ def run_demo_query(
             messages.append({"role": "user", "content": tool_results})
             force_tool = None
 
-    if not answer_text:
-        if all_search_results:
-            results_summary = json.dumps(
-                [r.model_dump() for r in all_search_results[:5]], default=str
-            )
-            final_resp = ac.chat_simple(
-                messages=[
-                    {"role": "user", "content": question},
-                    {"role": "assistant", "content": f"I found these certified sources: {results_summary}"},
-                    {"role": "user", "content": "Based on these certified KAKAPO sources, provide a complete structured answer in the user's language. Cite each source with its kpt_id."}
-                ],
-                system=SYSTEM_KAKAPO,
-            )
-            answer_text = " ".join(
-                b.text if hasattr(b, "text") else b.get("text", "")
-                for b in final_resp.content
-                if (hasattr(b, "type") and b.type == "text") or
-                   (isinstance(b, dict) and b.get("type") == "text")
-            )
-            total_cost += final_resp.estimated_cost_usd
-            total_input += final_resp.input_tokens
-            total_output += final_resp.output_tokens
-
+    answer_text = ""
     for msg in reversed(messages):
         if isinstance(msg, dict) and msg.get("role") == "assistant":
-            blocks = msg.get("content", [])
-            if isinstance(blocks, str):
-                answer_text = blocks
-            elif isinstance(blocks, list):
-                parts = []
-                for b in blocks:
-                    if isinstance(b, dict) and b.get("type") == "text":
-                        parts.append(b["text"])
-                    elif hasattr(b, "type") and b.type == "text":
-                        parts.append(b.text)
-                answer_text = " ".join(parts)
-            if answer_text.strip():
+            content = msg.get("content", [])
+            if isinstance(content, list):
+                answer_text = " ".join(
+                    b["text"] for b in content
+                    if isinstance(b, dict) and b.get("type") == "text"
+                )
+            elif isinstance(content, str):
+                answer_text = content
+            if answer_text:
                 break
 
     cited = _extract_cited_kpts(answer_text, all_search_results)
-
-    debug_queries = []
-    for msg in messages:
-        if isinstance(msg, dict) and msg.get("role") == "assistant":
-            for block in (msg.get("content") or []):
-                if isinstance(block, dict):
-                    if block.get("type") == "tool_use" and block.get("name") == "search_kakapo":
-                        debug_queries.append(block.get("input", {}).get("query", "?"))
-                elif hasattr(block, "type") and block.type == "tool_use" and block.name == "search_kakapo":
-                    debug_queries.append(block.input.get("query", "?") if isinstance(block.input, dict) else str(block.input))
 
     return DemoResult(
         question=question,
@@ -214,5 +176,4 @@ def run_demo_query(
         estimated_cost_usd=round(total_cost, 6),
         input_tokens=int(total_input),
         output_tokens=int(total_output),
-        debug_queries=debug_queries,
     )
