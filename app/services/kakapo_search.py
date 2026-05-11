@@ -103,13 +103,17 @@ def search(
     if kpt_status_filter != "all":
         q = q.filter(Publication.kpt_status == kpt_status_filter)
 
-    terms = [t for t in query.strip().split() if len(t) > 2][:8]
-    if terms:
-        term_filters = []
-        for term in terms:
-            term_filters.append(Publication.title.ilike(f"%{term}%"))
-            term_filters.append(Publication.abstract.ilike(f"%{term}%"))
-            term_filters.append(Publication.authors_raw.ilike(f"%{term}%"))
+    all_queries = _translate_query(query)
+    term_filters = []
+    seen_terms = set()
+    for q_variant in all_queries:
+        for term in q_variant.strip().split():
+            if len(term) > 3 and term.lower() not in seen_terms:
+                seen_terms.add(term.lower())
+                term_filters.append(Publication.title.ilike(f"%{term}%"))
+                term_filters.append(Publication.abstract.ilike(f"%{term}%"))
+                term_filters.append(Publication.keywords_json.ilike(f"%{term}%"))
+    if term_filters:
         q = q.filter(or_(*term_filters))
 
     q = q.order_by(
