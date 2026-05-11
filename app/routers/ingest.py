@@ -809,3 +809,71 @@ async def mass_ingest_loop(
 
     background_tasks.add_task(run)
     return {"status": "started", "queries": len(QUERIES), "message": "Infinite loop ingestion started on Railway"}
+
+@router.post("/mega-ingest")
+async def mega_ingest(
+    background_tasks: BackgroundTasks,
+    query: str = "cancer",
+    year_from: int = 2010,
+    year_to: int = 2026,
+    total_target: int = 100000,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    from app.services.europepmc_ingestor import ingest_batch as epmc_ingest
+    from app.services.openalex_ingestor import ingest_batch as oa_ingest
+    import logging
+    logger = logging.getLogger(__name__)
+
+    async def run():
+        total_created = 0
+        total_fetched = 0
+
+        start = 0
+        while total_fetched < total_target:
+            try:
+                r = epmc_ingest(
+                    db=db,
+                    query=query,
+                    max_results=1000,
+                    year_from=year_from,
+                    year_to=year_to,
+                    start=start,
+                    fetch_full_text=True,
+                )
+                total_created += r.total_created
+                total_fetched += r.total_fetched
+                logger.info(f"MEGA EPMC {query[:20]} start={start} fetched={r.total_fetched} created={r.total_created} total={total_created}")
+                if r.total_fetched < 100:
+                    break
+                start += 1000
+            except Exception as e:
+                logger.error(f"MEGA EPMC err start={start}: {e}")
+                start += 1000
+
+        cursor = "*"
+        oa_fetched = 0
+        while oa_fetched < total_target:
+            try:
+                r = oa_ingest(
+                    db=db,
+                    query=query,
+                    max_results=200,
+                    year_from=year_from,
+                    year_to=year_to,
+                    cursor=cursor,
+                    fetch_full_text=True,
+                )
+                total_created += r.total_created
+                oa_fetched += r.total_fetched
+                logger.info(f"MEGA OA {query[:20]} fetched={r.total_fetched} created={r.total_created} total={total_created}")
+                if r.total_fetched < 10:
+                    break
+            except Exception as e:
+                logger.error(f"MEGA OA err: {e}")
+                break
+
+        logger.info(f"MEGA DONE {query} total_created={total_created}")
+
+    background_tasks.add_task(run)
+    return {"status": "started", "query": query, "target": total_target}
