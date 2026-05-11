@@ -43,6 +43,20 @@ class PublicationRead(BaseModel):
     source_origin: str = "direct_deposit"
     hal_id: str | None = None
     opted_out_at: datetime | None = None
+    keywords_json: str | None = None
+    full_text: str | None = None
+    references_json: str | None = None
+    citations_count: int | None = None
+    language: str | None = None
+    article_type: str | None = None
+    license: str | None = None
+    mesh_terms_json: str | None = None
+    concepts_json: str | None = None
+    funding_json: str | None = None
+    orcid_authors_json: str | None = None
+    figures_count: int | None = None
+    tables_count: int | None = None
+    supplementary_json: str | None = None
 
     model_config = {"from_attributes": True}
 
