@@ -747,3 +747,65 @@ async def mass_ingest(
 
     background_tasks.add_task(run_mass_ingest)
     return {"status": "started", "queries": len(QUERIES), "message": "Mass ingestion running in background on Railway"}
+
+@router.post("/mass-ingest-loop")
+async def mass_ingest_loop(
+    background_tasks: BackgroundTasks,
+    year_from: int = 2010,
+    year_to: int = 2026,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    from app.services.europepmc_ingestor import ingest_batch as epmc_ingest
+    from app.services.openalex_ingestor import ingest_batch as oa_ingest
+    import logging
+    logger = logging.getLogger(__name__)
+
+    QUERIES = [
+        "cancer immunotherapy", "heart failure treatment", "diabetes mellitus",
+        "Alzheimer disease", "machine learning medicine", "CRISPR gene therapy",
+        "COVID treatment", "antibiotic resistance", "multiple sclerosis",
+        "Parkinson disease", "breast cancer", "lung cancer", "leukemia lymphoma",
+        "stroke cerebrovascular", "hypertension cardiovascular", "kidney disease",
+        "liver disease", "inflammatory bowel disease", "rheumatoid arthritis",
+        "sepsis infection", "obesity treatment", "depression anxiety",
+        "epilepsy treatment", "HIV antiretroviral", "tuberculosis treatment",
+        "genomics sequencing", "proteomics biomarkers", "microbiome disease",
+        "deep learning imaging", "natural language processing clinical",
+        "drug discovery AI", "protein structure", "epigenetics methylation",
+        "stem cell therapy", "gene therapy clinical", "vaccine efficacy",
+        "aging longevity", "palliative care", "pediatric oncology",
+        "rare disease treatment", "precision medicine biomarker",
+        "cardiovascular outcomes", "renal outcomes", "hepatology cirrhosis",
+        "dermatology biologics", "ophthalmology retina", "orthopedic surgery",
+        "neurosurgery outcomes", "transplant rejection", "hematology myeloma",
+        "endocrinology thyroid", "pulmonology COPD asthma", "gastroenterology",
+        "urology prostate", "gynecology ovarian", "rheumatology lupus",
+    ]
+
+    async def run():
+        total = 0
+        while True:
+            for query in QUERIES:
+                for start in range(0, 2000, 100):
+                    try:
+                        r = epmc_ingest(db=db, query=query, max_results=100,
+                            year_from=year_from, year_to=year_to,
+                            start=start, fetch_full_text=True)
+                        total += r.total_created
+                        if r.total_created == 0 and r.total_skipped_existing > 0:
+                            break
+                        logger.info(f"LOOP EPMC {query[:25]} s={start} +{r.total_created} T={total}")
+                    except Exception as e:
+                        logger.error(f"LOOP EPMC err: {e}")
+                try:
+                    r = oa_ingest(db=db, query=query, max_results=200,
+                        year_from=year_from, year_to=year_to,
+                        fetch_full_text=True)
+                    total += r.total_created
+                    logger.info(f"LOOP OA {query[:25]} +{r.total_created} T={total}")
+                except Exception as e:
+                    logger.error(f"LOOP OA err: {e}")
+
+    background_tasks.add_task(run)
+    return {"status": "started", "queries": len(QUERIES), "message": "Infinite loop ingestion started on Railway"}
