@@ -117,10 +117,22 @@ def search(
     if term_filters:
         q = q.filter(or_(*term_filters))
 
-    rows = q.order_by(
-        (Publication.kpt_status == "certified").desc(),
-        Publication.submitted_at.desc().nulls_last(),
-    ).limit(limit).all()
+    from sqlalchemy import case as _case
+    if seen_terms:
+        title_score = sum(
+            _case((Publication.title.ilike(f"%{t}%"), 1), else_=0)
+            for t in list(seen_terms)[:8]
+        )
+        rows = q.order_by(
+            (Publication.kpt_status == "certified").desc(),
+            title_score.desc(),
+            Publication.submitted_at.desc().nulls_last(),
+        ).limit(limit).all()
+    else:
+        rows = q.order_by(
+            (Publication.kpt_status == "certified").desc(),
+            Publication.submitted_at.desc().nulls_last(),
+        ).limit(limit).all()
 
     results = []
     for pub, kpt, ts in rows:
