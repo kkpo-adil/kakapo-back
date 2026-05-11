@@ -1,7 +1,7 @@
 import os
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -654,3 +654,96 @@ def fix_fulltext_schema(db: Session = Depends(get_db), _: str = Depends(require_
             errors.append(str(e))
     db.commit()
     return {"status": "ok", "added": added, "errors": errors}
+
+
+@router.post("/mass-ingest")
+async def mass_ingest(
+    background_tasks: BackgroundTasks,
+    year_from: int = 2015,
+    year_to: int = 2026,
+    max_per_query: int = 500,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    from app.services.europepmc_ingestor import ingest_batch as epmc_ingest
+    from app.services.openalex_ingestor import ingest_batch as oa_ingest
+
+    QUERIES = [
+        "cancer immunotherapy checkpoint pembrolizumab nivolumab",
+        "heart failure SGLT2 dapagliflozin empagliflozin",
+        "Alzheimer amyloid lecanemab donanemab tau",
+        "diabetes GLP1 semaglutide tirzepatide",
+        "CRISPR gene therapy clinical trial",
+        "CAR T cell lymphoma leukemia",
+        "mRNA vaccine COVID efficacy",
+        "antibiotic resistance mechanisms treatment",
+        "microbiome gut brain depression",
+        "deep learning radiology diagnosis AI",
+        "breast cancer HER2 pembrolizumab trastuzumab",
+        "lung cancer EGFR osimertinib immunotherapy",
+        "colorectal cancer VEGF bevacizumab",
+        "prostate cancer enzalutamide abiraterone",
+        "ovarian cancer PARP olaparib BRCA",
+        "melanoma BRAF immunotherapy nivolumab",
+        "pancreatic cancer FOLFIRINOX gemcitabine",
+        "glioblastoma temozolomide bevacizumab",
+        "stroke thrombectomy thrombolysis outcomes",
+        "atrial fibrillation ablation anticoagulation",
+        "multiple sclerosis ocrelizumab natalizumab",
+        "Parkinson deep brain stimulation levodopa",
+        "epilepsy cannabidiol seizure treatment",
+        "depression ketamine esketamine treatment",
+        "rheumatoid arthritis JAK inhibitor biologics",
+        "inflammatory bowel vedolizumab ustekinumab",
+        "psoriasis biologics secukinumab ixekizumab",
+        "lupus belimumab anifrolumab treatment",
+        "obesity bariatric surgery semaglutide outcomes",
+        "sepsis biomarker ICU mortality treatment",
+        "HIV antiretroviral dolutegravir cabotegravir",
+        "tuberculosis rifampicin bedaquiline treatment",
+        "COVID antiviral paxlovid nirmatrelvir",
+        "protein structure AlphaFold prediction",
+        "single cell RNA sequencing transcriptomics",
+        "federated learning healthcare privacy",
+        "drug discovery molecular generation AI",
+        "genomics sequencing clinical precision medicine",
+        "aging senolytic longevity rapamycin",
+        "stem cell therapy regenerative medicine",
+    ]
+
+    async def run_mass_ingest():
+        import logging
+        logger = logging.getLogger(__name__)
+        total_created = 0
+        for query in QUERIES:
+            for start in range(0, max_per_query, 100):
+                try:
+                    report = epmc_ingest(
+                        db=db,
+                        query=query,
+                        max_results=100,
+                        year_from=year_from,
+                        year_to=year_to,
+                        start=start,
+                        fetch_full_text=True,
+                    )
+                    total_created += report.total_created
+                    logger.info(f"MASS_INGEST EPMC q={query[:30]} start={start} created={report.total_created} total={total_created}")
+                except Exception as e:
+                    logger.error(f"MASS_INGEST EPMC error: {e}")
+            try:
+                report = oa_ingest(
+                    db=db,
+                    query=query,
+                    max_results=200,
+                    year_from=year_from,
+                    year_to=year_to,
+                    fetch_full_text=True,
+                )
+                total_created += report.total_created
+                logger.info(f"MASS_INGEST OA q={query[:30]} created={report.total_created} total={total_created}")
+            except Exception as e:
+                logger.error(f"MASS_INGEST OA error: {e}")
+
+    background_tasks.add_task(run_mass_ingest)
+    return {"status": "started", "queries": len(QUERIES), "message": "Mass ingestion running in background on Railway"}
