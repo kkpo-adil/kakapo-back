@@ -136,9 +136,11 @@ def run_demo_query(
             tool_results = []
             for tc in resp.tool_calls:
                 if tc.name == "search_kakapo":
+                    _query = tc.input.get("query", question) if isinstance(tc.input, dict) else question
+                    debug_queries.append(_query)
                     results = kakapo_search.search(
                         db=db,
-                        query=tc.input.get("query", question),
+                        query=_query,
                         limit=tc.input.get("limit", 5),
                         kpt_status_filter=tc.input.get("kpt_status_filter", "all"),
                     )
