@@ -92,7 +92,7 @@ def search(
     kpt_status_filter: Literal["certified", "indexed", "all"] = "all",
     min_score: int = 0,
 ) -> list[SearchResult]:
-    logger.info(f"KAKAPO_SEARCH query='{query}' limit={limit} filter={kpt_status_filter}")
+    print(f"KAKAPO_SEARCH query='{query}' limit={limit} filter={kpt_status_filter}", flush=True)
     q = db.query(Publication, KPT, TrustScore).join(
         KPT, KPT.publication_id == Publication.id
     ).outerjoin(
