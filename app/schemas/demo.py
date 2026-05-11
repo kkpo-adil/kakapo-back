@@ -28,6 +28,7 @@ class DemoResult(BaseModel):
     estimated_cost_usd: float
     input_tokens: int
     output_tokens: int
+    debug_queries: list[str] = []
     request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

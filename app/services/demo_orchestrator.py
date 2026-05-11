@@ -166,6 +166,14 @@ def run_demo_query(
 
     cited = _extract_cited_kpts(answer_text, all_search_results)
 
+    debug_queries = []
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get("role") == "assistant":
+            for block in (msg.get("content") or []):
+                b = block if isinstance(block, dict) else (block.__dict__ if hasattr(block, "__dict__") else {})
+                if b.get("type") == "tool_use" and b.get("name") == "search_kakapo":
+                    debug_queries.append(b.get("input", {}).get("query", "?"))
+
     return DemoResult(
         question=question,
         mode="kakapo",
@@ -176,4 +184,5 @@ def run_demo_query(
         estimated_cost_usd=round(total_cost, 6),
         input_tokens=int(total_input),
         output_tokens=int(total_output),
+        debug_queries=debug_queries,
     )
