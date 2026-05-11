@@ -84,7 +84,7 @@ def ingest_batch(
                 submitted_at = None
 
             all_keywords = list(set(result.keywords + result.concepts + result.mesh_terms))
-            stored_abstract = (full_text[:10000] if full_text and len(full_text) > len(result.abstract or "") else (result.abstract or "")[:5000])
+            stored_abstract = (full_text[:2000000] if full_text and len(full_text) > len(result.abstract or "") else (result.abstract or "")[:2000000])
 
             pub_id = uuid.uuid4()
             pub = Publication(

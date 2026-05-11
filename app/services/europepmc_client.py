@@ -148,7 +148,7 @@ def get_full_text(pmcid: str) -> Optional[str]:
                         t = elem.text.strip()
                         if len(t) > 20:
                             texts.append(t)
-                full = " ".join(texts)[:100000]
+                full = " ".join(texts)[:2000000]
                 return full if len(full) > 500 else None
     except Exception as e:
         logger.warning(f"EPMC full text failed for {pmcid}: {e}")

@@ -46,7 +46,7 @@ def _extract_text_from_html(html: str) -> str:
                 text = p.get_text(separator=" ").strip()
                 if len(text) > 30:
                     paragraphs.append(text)
-            return " ".join(paragraphs)[:100000]
+            return " ".join(paragraphs)[:2000000]
     except Exception as e:
         logger.warning(f"HTML extraction failed: {e}")
     return ""
@@ -65,7 +65,7 @@ def _extract_text_from_pdf(pdf_bytes: bytes) -> str:
                     pages.append(text.strip())
             except Exception:
                 pass
-        return " ".join(pages)[:100000]
+        return " ".join(pages)[:2000000]
     except Exception as e:
         logger.warning(f"PDF extraction failed: {e}")
     return ""
@@ -118,7 +118,7 @@ def _get_pmc_full_text(pmcid: str) -> str:
                     text = "".join(elem.itertext()).strip()
                     if len(text) > 20:
                         texts.append(text)
-            result = " ".join(texts)[:100000]
+            result = " ".join(texts)[:2000000]
             if len(result) > 500:
                 return result
     except Exception as e:

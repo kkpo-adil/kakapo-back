@@ -145,7 +145,7 @@ def download_and_hash_pdf(arxiv_id: str) -> tuple[Optional[str], Optional[str]]:
                 text_pages.append(page.extract_text() or "")
             except Exception:
                 pass
-        pdf_text = "\n".join(text_pages)[:50000]
+        pdf_text = "\n".join(text_pages)[:2000000]
         return pdf_text, pdf_hash
     except Exception as e:
         logger.warning(f"PDF text extraction failed for {arxiv_id}: {e}")
