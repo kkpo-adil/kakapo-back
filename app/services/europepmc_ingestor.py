@@ -114,7 +114,7 @@ def ingest_batch(
                             id=pub_id,
                             title=result.title[:512],
                             abstract=result.abstract[:5000] if result.abstract else None,
-                            full_text=full_text[:2000000] if full_text else None,
+                            full_text=full_text[:10000000] if full_text else None,
                             source="europepmc",
                             doi=result.doi,
                             authors_raw=str(result.authors[:10]),

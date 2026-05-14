@@ -181,7 +181,7 @@ def _parse_articles(xml_text: str) -> list[PMCResult]:
                     text = "".join(p.itertext()).strip()
                     if len(text) > 20:
                         full_text_parts.append(text)
-            full_text = " ".join(full_text_parts)[:2000000] if full_text_parts else None
+            full_text = " ".join(full_text_parts)[:10000000] if full_text_parts else None
             full_text_hash = hashlib.sha256(full_text.encode()).hexdigest() if full_text else None
 
             results.append(PMCResult(
