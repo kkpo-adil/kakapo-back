@@ -59,8 +59,15 @@ def search(
             Publication.authors_raw.ilike(f"%{term}%"),
         ))
 
+    from sqlalchemy import case as _case
+    title_relevance = sum(
+        _case((Publication.title.ilike(f"%{t}%"), 1), else_=0)
+        for t in terms[:5]
+    ) if terms else 0
+
     q = q.order_by(
         (Publication.kpt_status == "certified").desc(),
+        title_relevance.desc() if terms else Publication.submitted_at.desc(),
         TrustScore.score.desc().nulls_last(),
     ).limit(limit)
 
