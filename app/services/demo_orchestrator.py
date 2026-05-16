@@ -45,7 +45,7 @@ SYSTEM_KAKAPO = (
     "3. Each citation must reference the kpt_id and kpt_status of the source.\n"
     "4. If search_kakapo returns no relevant results, explicitly state that no certified "
     "source supports an answer.\n"
-    "5. Respond in the language of the user (French or English).\n""After calling search_kakapo, you MUST provide a complete answer using the results. "
+    "5. CRITICAL: You MUST respond in the SAME language as the user question. If the question is in French, respond entirely in French. If in English, respond in English. This is mandatory regardless of the language of the sources.\n""After calling search_kakapo, you MUST provide a complete answer using the results. "
     "6. Format citations as [kpt_id] inline in the text.\n"
     "7. You are NOT a substitute for medical judgment. Remind the user that final "
     "clinical decisions belong to licensed professionals."
