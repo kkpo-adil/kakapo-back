@@ -40,68 +40,115 @@ def search(
     kpt_status_filter: Literal["certified", "indexed", "all"] = "all",
     min_score: int = 0,
 ) -> list[SearchResult]:
-    q = db.query(Publication, KPT, TrustScore).join(
-        KPT, KPT.publication_id == Publication.id
-    ).outerjoin(
-        TrustScore, TrustScore.publication_id == Publication.id
-    ).filter(
-        Publication.opted_out_at.is_(None)
-    )
 
-    if kpt_status_filter != "all":
-        q = q.filter(Publication.kpt_status == kpt_status_filter)
+    tsquery = " & ".join(query.strip().split()[:5])
 
-    terms = query.strip().split()
-    for term in terms[:5]:
-        q = q.filter(or_(
-            Publication.title.ilike(f"%{term}%"),
-            Publication.abstract.ilike(f"%{term}%"),
-            Publication.authors_raw.ilike(f"%{term}%"),
-        ))
+    sql = text("""
+        SELECT
+            p.id, p.title, p.abstract, p.authors_raw, p.doi,
+            p.institution_raw, p.submitted_at, p.kpt_status,
+            p.source_origin, p.hal_id,
+            k.kpt_id, k.content_hash,
+            ts.score, ts.is_indexation_score,
+            ts_rank(
+                to_tsvector('english', coalesce(p.title,'') || ' ' || coalesce(p.abstract,'')),
+                to_tsquery('english', :tsquery)
+            ) as rank
+        FROM publications p
+        JOIN kpts k ON k.publication_id = p.id
+        LEFT JOIN trust_scores ts ON ts.publication_id = p.id
+        WHERE p.opted_out_at IS NULL
+        AND (:status_filter = 'all' OR p.kpt_status = :status_filter)
+        AND to_tsvector('english', coalesce(p.title,'') || ' ' || coalesce(p.abstract,''))
+            @@ to_tsquery('english', :tsquery)
+        ORDER BY
+            (p.kpt_status = 'certified') DESC,
+            rank DESC,
+            ts.score DESC NULLS LAST
+        LIMIT :limit
+    """)
 
-    from sqlalchemy import case as _case
-    title_relevance = sum(
-        _case((Publication.title.ilike(f"%{t}%"), 1), else_=0)
-        for t in terms[:5]
-    ) if terms else 0
+    try:
+        rows = db.execute(sql, {
+            "tsquery": tsquery,
+            "status_filter": kpt_status_filter,
+            "limit": limit,
+        }).fetchall()
+    except Exception as e:
+        logger.error(f"Full text search failed: {e} — falling back to ilike")
+        q = db.query(Publication, KPT, TrustScore).join(
+            KPT, KPT.publication_id == Publication.id
+        ).outerjoin(
+            TrustScore, TrustScore.publication_id == Publication.id
+        ).filter(Publication.opted_out_at.is_(None))
+        if kpt_status_filter != "all":
+            q = q.filter(Publication.kpt_status == kpt_status_filter)
+        terms = query.strip().split()
+        for term in terms[:3]:
+            q = q.filter(or_(
+                Publication.title.ilike(f"%{term}%"),
+                Publication.abstract.ilike(f"%{term}%"),
+            ))
+        q = q.order_by(
+            (Publication.kpt_status == "certified").desc(),
+        ).limit(limit)
+        orm_rows = q.all()
+        results = []
+        for pub, kpt, ts in orm_rows:
+            authors_raw = pub.authors_raw or ""
+            authors = [a.strip() for a in str(authors_raw).split(",") if a.strip()][:5]
+            date_str = pub.submitted_at.strftime("%Y-%m-%d") if pub.submitted_at else "—"
+            results.append(SearchResult(
+                publication_id=str(pub.id),
+                kpt_id=kpt.kpt_id if kpt else f"IKPT-{str(pub.id)[:8]}",
+                kpt_status=pub.kpt_status or "indexed",
+                source_origin=pub.source_origin or "direct_deposit",
+                title=pub.title or "",
+                abstract=(pub.abstract or "")[:500],
+                authors=authors,
+                doi=pub.doi,
+                publisher=pub.institution_raw,
+                publication_date=date_str,
+                hash_kpt=kpt.content_hash if kpt else "",
+                trust_score=None,
+                indexation_score=None,
+                hal_id=pub.hal_id,
+                source_label="KAKAPO certified" if pub.kpt_status == "certified" else "HAL indexed",
+                url_kakapo=f"{API_BASE_URL}/publications/{pub.id}",
+            ))
+        return results
 
-    q = q.order_by(
-        (Publication.kpt_status == "certified").desc(),
-        title_relevance.desc(),
-        Publication.submitted_at.desc().nulls_last(),
-    ).limit(limit)
-
-    rows = q.all()
     results = []
-    for pub, kpt, ts in rows:
-        authors_raw = pub.authors_raw or ""
+    for row in rows:
+        authors_raw = row.authors_raw or ""
         if isinstance(authors_raw, list):
             authors = [a.get("name", "") if isinstance(a, dict) else str(a) for a in authors_raw]
         else:
             authors = [a.strip() for a in str(authors_raw).split(",") if a.strip()][:5]
 
-        date_str = pub.submitted_at.strftime("%Y-%m-%d") if pub.submitted_at else "—"
-        score_val = ts.score if ts else None
-        trust_int = int(round(score_val * 100)) if score_val and not (ts and ts.is_indexation_score) else None
-        index_int = int(round(score_val * 100)) if score_val and ts and ts.is_indexation_score else None
+        date_str = row.submitted_at.strftime("%Y-%m-%d") if row.submitted_at else "—"
+        score_val = row.score
+        is_idx = row.is_indexation_score
+        trust_int = int(round(score_val * 100)) if score_val and not is_idx else None
+        index_int = int(round(score_val * 100)) if score_val and is_idx else None
 
         results.append(SearchResult(
-            publication_id=str(pub.id),
-            kpt_id=kpt.kpt_id if kpt else f"IKPT-{str(pub.id)[:8]}",
-            kpt_status=pub.kpt_status or "indexed",
-            source_origin=pub.source_origin or "direct_deposit",
-            title=pub.title or "",
-            abstract=(pub.abstract or "")[:500],
+            publication_id=str(row.id),
+            kpt_id=row.kpt_id if row.kpt_id else f"IKPT-{str(row.id)[:8]}",
+            kpt_status=row.kpt_status or "indexed",
+            source_origin=row.source_origin or "direct_deposit",
+            title=row.title or "",
+            abstract=(row.abstract or "")[:500],
             authors=authors,
-            doi=pub.doi,
-            publisher=pub.institution_raw,
+            doi=row.doi,
+            publisher=row.institution_raw,
             publication_date=date_str,
-            hash_kpt=kpt.content_hash if kpt else "",
+            hash_kpt=row.content_hash if row.content_hash else "",
             trust_score=trust_int,
             indexation_score=index_int,
-            hal_id=pub.hal_id,
-            source_label="KAKAPO certified" if pub.kpt_status == "certified" else "HAL indexed",
-            url_kakapo=f"{API_BASE_URL}/publications/{pub.id}",
+            hal_id=row.hal_id,
+            source_label="KAKAPO certified" if row.kpt_status == "certified" else "HAL indexed",
+            url_kakapo=f"{API_BASE_URL}/publications/{row.id}",
         ))
 
     logger.info(f"KakapoSearch query={query!r} filter={kpt_status_filter} results={len(results)}")
