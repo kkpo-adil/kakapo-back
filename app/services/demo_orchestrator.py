@@ -36,8 +36,8 @@ TOOL_SEARCH_KAKAPO = {
 
 SYSTEM_KAKAPO = (
     "You are an AI assistant integrated with the KAKAPO scientific provenance infrastructure. "
-    "Your role is to answer scientific and medical questions by citing only publications "
-    "retrieved through the search_kakapo tool.\n\n"
+    "Your role is to deliver substantive, expert-level answers to scientific and medical questions "
+    "by citing only publications retrieved through the search_kakapo tool.\n\n"
     "Strict rules:\n"
     "1. ALWAYS call search_kakapo before answering. No exceptions.\n"
     "2. Cite ONLY publications returned by search_kakapo. NEVER fabricate KPT identifiers, "
@@ -45,15 +45,16 @@ SYSTEM_KAKAPO = (
     "3. Each citation must reference the kpt_id and kpt_status of the source.\n"
     "4. If search_kakapo returns no relevant results, explicitly state that no certified "
     "source supports an answer.\n"
-    "5. CRITICAL: You MUST respond in the SAME language as the user question. If the question is in French, respond entirely in French. If in English, respond in English. This is mandatory regardless of the language of the sources.\n""After calling search_kakapo, you MUST provide a complete answer using the results. "
-    "6. Format citations as [kpt_id] inline in the text.\n"
-    "7. You are NOT a substitute for medical judgment. Remind the user that final "
+    "5. CRITICAL: You MUST respond in the SAME language as the user question. If the question is in French, respond entirely in French. If in English, respond in English. This is mandatory regardless of the language of the sources.\n"
+    "6. After calling search_kakapo, you MUST provide a COMPLETE, DETAILED, EXPERT-LEVEL answer using the results. Aim for depth and clinical/scientific precision. Structure with clear sections when relevant. Include mechanisms of action, evidence level, clinical implications.\n"
+    "7. Format citations as [kpt_id] inline in the text. Cite generously — every claim should be backed by a KPT.\n"
+    "8. You are NOT a substitute for medical judgment. Remind the user that final "
     "clinical decisions belong to licensed professionals."
 )
 
 SYSTEM_RAW = (
     "You are a general-purpose AI assistant. Answer the user question to the best of "
-    "your knowledge. Do not pretend to have external sources. "
+    "your knowledge with depth and precision. Do not pretend to have external sources. "
     "Respond in the language of the user."
 )
 
@@ -84,7 +85,7 @@ def run_demo_query(
     db: Session,
     question: str,
     with_kakapo: bool = True,
-    max_loops: int = 3,
+    max_loops: int = 2,
 ) -> DemoResult:
     t0 = time.time()
     total_input = total_output = total_cost = 0.0
@@ -95,6 +96,7 @@ def run_demo_query(
         resp = ac.chat_simple(
             messages=[{"role": "user", "content": question}],
             system=SYSTEM_RAW,
+            max_tokens=2048,
         )
         answer_text = " ".join(
             b["text"] for b in resp.content if isinstance(b, dict) and b.get("type") == "text"
@@ -115,11 +117,19 @@ def run_demo_query(
     force_tool = {"type": "tool", "name": "search_kakapo"}
 
     for loop in range(max_loops):
+        if loop == 0:
+            tc = force_tool
+            max_tok = 512
+        else:
+            tc = {"type": "none"}
+            max_tok = 2048
+
         resp = ac.chat_with_tools(
             messages=messages,
             tools=[TOOL_SEARCH_KAKAPO],
             system=SYSTEM_KAKAPO,
-            tool_choice=force_tool if loop == 0 else None,
+            tool_choice=tc,
+            max_tokens=max_tok,
         )
         total_input += resp.input_tokens
         total_output += resp.output_tokens
@@ -133,22 +143,21 @@ def run_demo_query(
             tool_calls_count += len(resp.tool_calls)
             messages.append({"role": "assistant", "content": resp.content})
             tool_results = []
-            for tc in resp.tool_calls:
-                if tc.name == "search_kakapo":
+            for tc_call in resp.tool_calls:
+                if tc_call.name == "search_kakapo":
                     results = kakapo_search.search(
                         db=db,
-                        query=tc.input.get("query", question),
-                        limit=tc.input.get("limit", 5),
-                        kpt_status_filter=tc.input.get("kpt_status_filter", "all"),
+                        query=tc_call.input.get("query", question),
+                        limit=tc_call.input.get("limit", 5),
+                        kpt_status_filter=tc_call.input.get("kpt_status_filter", "all"),
                     )
                     all_search_results.extend(results)
                     tool_results.append({
                         "type": "tool_result",
-                        "tool_use_id": tc.id,
+                        "tool_use_id": tc_call.id,
                         "content": json.dumps([r.model_dump() for r in results], default=str),
                     })
             messages.append({"role": "user", "content": tool_results})
-            force_tool = None
 
     answer_text = ""
     for msg in reversed(messages):
