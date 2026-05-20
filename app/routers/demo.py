@@ -45,10 +45,19 @@ def demo_health(db: Session = Depends(get_db)):
     except Exception:
         db_ok = False
         catalog_size = 0
+    try:
+        from sqlalchemy import inspect as sqlinspect
+        inspector = sqlinspect(db.bind)
+        has_ct = 'clinical_trials' in inspector.get_table_names()
+        ct_size = db.execute(sqlfunc.count(sqlfunc.text('1')).select().select_from(sqlfunc.text('clinical_trials'))).scalar() if has_ct else 0
+    except Exception:
+        ct_size = 0
     return {
         "anthropic_ok": anthropic_ok,
         "db_ok": db_ok,
         "catalog_size": catalog_size,
+        "clinical_trials_size": ct_size,
+        "total_size": catalog_size + ct_size,
         "ready_for_demo": anthropic_ok and db_ok and catalog_size > 0,
     }
 
