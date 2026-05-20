@@ -49,7 +49,11 @@ def demo_health(db: Session = Depends(get_db)):
         from sqlalchemy import inspect as sqlinspect
         inspector = sqlinspect(db.bind)
         has_ct = 'clinical_trials' in inspector.get_table_names()
-        ct_size = db.execute(sqlfunc.count(sqlfunc.text('1')).select().select_from(sqlfunc.text('clinical_trials'))).scalar() if has_ct else 0
+        if has_ct:
+            from sqlalchemy import text as sqlt
+            ct_size = db.execute(sqlt('SELECT COUNT(*) FROM clinical_trials')).scalar() or 0
+        else:
+            ct_size = 0
     except Exception:
         ct_size = 0
     return {
