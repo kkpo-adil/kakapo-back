@@ -40,23 +40,39 @@ def fetch_source(url: str) -> Tuple[Optional[bytes], int]:
 
 
 def verify_kpt(db: Session, kpt_id: str, triggered_by: str = "manual") -> dict:
-    """Re-fetch source, recompute hash, compare with stored hash."""
+    """Re-fetch source, recompute CANONICAL FINGERPRINTS, compare per zone.
+    
+    Uses canonical_fingerprint v1.0 multi-zone hashing.
+    Distinguishes between identity / protocol / outcomes / narrative changes.
+    """
+    from app.services.canonical_fingerprint import compute_ct_fingerprints, compare_ct_fingerprints
+    import json
+    
     row = db.execute(text("""
-        SELECT id, kpt_id, file_hash, source_url, kpl_version, integrity_status
-        FROM publications
-        WHERE kpt_id = :kpt_id
+        SELECT p.id, k.kpt_id, k.content_hash AS file_hash, p.source_url, 
+               p.kpl_version, p.integrity_status
+        FROM publications p
+        JOIN kpts k ON k.publication_id = p.id
+        WHERE k.kpt_id = :kpt_id
         LIMIT 1
     """), {"kpt_id": kpt_id}).first()
     
     table = "publications"
     if not row:
-        row = db.execute(text("""
-            SELECT id, kpt_id, hash_ct AS file_hash, NULL AS source_url, kpl_version, integrity_status
+        ct_row = db.execute(text("""
+            SELECT id, kpt_id, hash_ct, nct_id,
+                   fp_identity, fp_protocol, fp_outcomes, fp_narrative, fp_canonical,
+                   kpl_version, integrity_status
             FROM clinical_trials
             WHERE kpt_id = :kpt_id
             LIMIT 1
         """), {"kpt_id": kpt_id}).first()
-        table = "clinical_trials" if row else None
+        
+        if ct_row:
+            return _verify_ct_canonical(db, ct_row, triggered_by)
+        
+        row = None
+        table = None
     
     if not row:
         return {"kpt_id": kpt_id, "status": "not_found", "verified": False}
@@ -120,15 +136,22 @@ def _log_alteration(db, kpt_id, source_type, prev_hash, new_hash, prev_ver, new_
 
 
 def recrawl_batch(db: Session, batch_size: int = 100, max_age_hours: int = 24) -> dict:
-    """Re-crawl KPTs not verified in last max_age_hours."""
+    """Re-crawl KPTs not verified in last max_age_hours.
+    
+    Two architectures handled:
+    - publications : JOIN with kpts table (kpt_id, content_hash via kpts FK)
+    - clinical_trials : kpt_id stored directly in the table
+    """
     t0 = time.time()
     half = max(batch_size // 2, 1)
     
     pub_rows = db.execute(text("""
-        SELECT kpt_id FROM publications 
-        WHERE source_url IS NOT NULL 
-          AND (last_verified_at IS NULL OR last_verified_at < NOW() - (INTERVAL '1 hour' * :h))
-        ORDER BY last_verified_at NULLS FIRST
+        SELECT k.kpt_id 
+        FROM publications p
+        JOIN kpts k ON k.publication_id = p.id
+        WHERE p.source_url IS NOT NULL 
+          AND (p.last_verified_at IS NULL OR p.last_verified_at < NOW() - (INTERVAL '1 hour' * :h))
+        ORDER BY p.last_verified_at NULLS FIRST
         LIMIT :n
     """), {"n": half, "h": max_age_hours}).all()
     
@@ -166,21 +189,21 @@ def get_integrity_summary(db: Session) -> dict:
     """Summary stats for /demo/integrity-summary endpoint."""
     pub_stats = db.execute(text("""
         SELECT 
-            COUNT(*) FILTER (WHERE integrity_status = 'verified') AS verified,
+            COUNT(*) FILTER (WHERE fp_canonical IS NOT NULL) AS verified,
             COUNT(*) FILTER (WHERE integrity_status = 'altered') AS altered,
             COUNT(*) FILTER (WHERE integrity_status = 'retracted') AS retracted,
-            COUNT(*) FILTER (WHERE last_verified_at IS NULL) AS unverified,
-            MAX(last_verified_at) AS last_check
+            COUNT(*) FILTER (WHERE fp_canonical IS NULL) AS unverified,
+            MAX(fp_computed_at) AS last_check
         FROM publications
     """)).first()
     
     ct_stats = db.execute(text("""
         SELECT 
-            COUNT(*) FILTER (WHERE integrity_status = 'verified') AS verified,
+            COUNT(*) FILTER (WHERE fp_canonical IS NOT NULL) AS verified,
             COUNT(*) FILTER (WHERE integrity_status = 'altered') AS altered,
             COUNT(*) FILTER (WHERE integrity_status = 'retracted') AS retracted,
-            COUNT(*) FILTER (WHERE last_verified_at IS NULL) AS unverified,
-            MAX(last_verified_at) AS last_check
+            COUNT(*) FILTER (WHERE fp_canonical IS NULL) AS unverified,
+            MAX(fp_computed_at) AS last_check
         FROM clinical_trials
     """)).first()
     
