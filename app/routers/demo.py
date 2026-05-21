@@ -142,7 +142,7 @@ def demo_query_result(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
     return job
 
-@router.get("/demo/stream")
+@router.get("/stream")
 def demo_stream(db: Session = Depends(get_db)):
     from sqlalchemy import text as sqlt
     try:
