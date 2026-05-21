@@ -141,3 +141,52 @@ def demo_query_result(job_id: str):
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+@router.get("/demo/stream")
+def demo_stream(db: Session = Depends(get_db)):
+    from sqlalchemy import text as sqlt
+    try:
+        recent_rows = db.execute(sqlt("""
+            SELECT nct_id, theme, kpt_id, title,
+                   EXTRACT(EPOCH FROM (NOW() - ingested_at))::int as secs_ago
+            FROM clinical_trials
+            ORDER BY ingested_at DESC
+            LIMIT 5
+        """)).all()
+        recent = [
+            {
+                "nct_id": r[0],
+                "theme": r[1],
+                "kpt_id": r[2],
+                "title": r[3][:60] if r[3] else "",
+                "secs_ago": int(r[4]) if r[4] else 0,
+            }
+            for r in recent_rows
+        ]
+    except Exception:
+        recent = []
+    try:
+        theme_rows = db.execute(sqlt("""
+            SELECT theme, COUNT(*) as n FROM clinical_trials
+            WHERE theme IS NOT NULL
+            GROUP BY theme ORDER BY n DESC LIMIT 6
+        """)).all()
+        themes = [{"theme": r[0], "count": int(r[1])} for r in theme_rows]
+        total = sum(t["count"] for t in themes)
+        for t in themes:
+            t["pct"] = round(100 * t["count"] / total) if total > 0 else 0
+    except Exception:
+        themes = []
+    try:
+        catalog = db.execute(sqlt("SELECT COUNT(*) FROM publications")).scalar() or 0
+        trials = db.execute(sqlt("SELECT COUNT(*) FROM clinical_trials")).scalar() or 0
+    except Exception:
+        catalog = 0
+        trials = 0
+    return {
+        "recent": recent,
+        "themes": themes,
+        "catalog_size": catalog,
+        "trials_size": trials,
+        "total_size": catalog + trials,
+    }
