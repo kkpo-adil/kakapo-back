@@ -122,22 +122,27 @@ def _log_alteration(db, kpt_id, source_type, prev_hash, new_hash, prev_ver, new_
 def recrawl_batch(db: Session, batch_size: int = 100, max_age_hours: int = 24) -> dict:
     """Re-crawl KPTs not verified in last max_age_hours."""
     t0 = time.time()
-    rows = db.execute(text("""
-        (SELECT kpt_id FROM publications 
-         WHERE source_url IS NOT NULL 
-           AND (last_verified_at IS NULL OR last_verified_at < NOW() - INTERVAL ':h hours')
-         ORDER BY last_verified_at NULLS FIRST
-         LIMIT :n)
-        UNION ALL
-        (SELECT kpt_id FROM clinical_trials 
-         WHERE (last_verified_at IS NULL OR last_verified_at < NOW() - INTERVAL ':h hours')
-         ORDER BY last_verified_at NULLS FIRST
-         LIMIT :n)
+    half = max(batch_size // 2, 1)
+    
+    pub_rows = db.execute(text("""
+        SELECT kpt_id FROM publications 
+        WHERE source_url IS NOT NULL 
+          AND (last_verified_at IS NULL OR last_verified_at < NOW() - (INTERVAL '1 hour' * :h))
+        ORDER BY last_verified_at NULLS FIRST
         LIMIT :n
-    """.replace(":h", str(max_age_hours)), ), {"n": batch_size}).all()
+    """), {"n": half, "h": max_age_hours}).all()
+    
+    ct_rows = db.execute(text("""
+        SELECT kpt_id FROM clinical_trials 
+        WHERE (last_verified_at IS NULL OR last_verified_at < NOW() - (INTERVAL '1 hour' * :h))
+        ORDER BY last_verified_at NULLS FIRST
+        LIMIT :n
+    """), {"n": half, "h": max_age_hours}).all()
+    
+    all_rows = list(pub_rows) + list(ct_rows)
     
     stats = {"verified": 0, "altered": 0, "retracted": 0, "failed": 0, "no_source": 0}
-    for (kpt_id,) in rows:
+    for (kpt_id,) in all_rows:
         try:
             result = verify_kpt(db, kpt_id, triggered_by="recrawl_cron")
             status = result.get("status", "failed")
@@ -151,7 +156,9 @@ def recrawl_batch(db: Session, batch_size: int = 100, max_age_hours: int = 24) -
             stats["failed"] += 1
     
     stats["duration_s"] = round(time.time() - t0, 1)
-    stats["batch_size_processed"] = len(rows)
+    stats["batch_size_processed"] = len(all_rows)
+    stats["publications_picked"] = len(pub_rows)
+    stats["clinical_trials_picked"] = len(ct_rows)
     return stats
 
 
