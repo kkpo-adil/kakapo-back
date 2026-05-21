@@ -190,3 +190,20 @@ def demo_stream(db: Session = Depends(get_db)):
         "trials_size": trials,
         "total_size": catalog + trials,
     }
+
+@router.get("/integrity/verify/{kpt_id}")
+def integrity_verify(kpt_id: str, db: Session = Depends(get_db)):
+    from app.services.integrity_checker import verify_kpt
+    return verify_kpt(db, kpt_id, triggered_by="api_manual")
+
+
+@router.post("/integrity/recrawl")
+def integrity_recrawl(batch_size: int = 50, db: Session = Depends(get_db)):
+    from app.services.integrity_checker import recrawl_batch
+    return recrawl_batch(db, batch_size=batch_size, max_age_hours=24)
+
+
+@router.get("/integrity/summary")
+def integrity_summary(db: Session = Depends(get_db)):
+    from app.services.integrity_checker import get_integrity_summary
+    return get_integrity_summary(db)
