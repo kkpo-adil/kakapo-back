@@ -123,6 +123,118 @@ def verify_kpt(db: Session, kpt_id: str, triggered_by: str = "manual") -> dict:
     return {"kpt_id": kpt_id, "status": "altered", "verified": True, "previous_hash": stored_hash, "new_hash": new_hash, "new_version": current_version + 1}
 
 
+def _verify_ct_canonical(db: Session, ct_row, triggered_by: str) -> dict:
+    """Verify a clinical_trial KPT using canonical multi-zone fingerprints."""
+    from app.services.canonical_fingerprint import compute_ct_fingerprints, compare_ct_fingerprints
+    
+    nct_id = ct_row[3]
+    stored_fps = {
+        "fp_identity": ct_row[4],
+        "fp_protocol": ct_row[5],
+        "fp_outcomes": ct_row[6],
+        "fp_narrative": ct_row[7],
+        "fp_canonical": ct_row[8],
+    }
+    current_version = ct_row[9] or 1
+    
+    if not stored_fps.get("fp_canonical"):
+        return {"kpt_id": ct_row[1], "status": "not_yet_backfilled", "verified": False,
+                "message": "Fingerprints not yet computed for this KPT"}
+    
+    source_url = f"https://clinicaltrials.gov/api/v2/studies/{nct_id}"
+    content, response_code = fetch_source(source_url)
+    
+    if response_code == 404:
+        _log_alteration(db, ct_row[1], "clinical_trials", stored_fps["fp_canonical"], None,
+                        current_version, current_version + 1, "retracted", 404, triggered_by)
+        db.execute(text("""
+            UPDATE clinical_trials
+            SET last_verified_at = NOW(), integrity_status = 'retracted',
+                kpl_version = :v
+            WHERE kpt_id = :k
+        """), {"k": ct_row[1], "v": current_version + 1})
+        db.commit()
+        return {"kpt_id": ct_row[1], "status": "retracted", "verified": True}
+    
+    if content is None:
+        db.execute(text("""
+            UPDATE clinical_trials
+            SET last_verified_at = NOW(), integrity_status = 'fetch_failed'
+            WHERE kpt_id = :k
+        """), {"k": ct_row[1]})
+        db.commit()
+        return {"kpt_id": ct_row[1], "status": "fetch_failed", "http_code": response_code}
+    
+    import json as _json
+    try:
+        data = _json.loads(content)
+        ps = data.get("protocolSection", {})
+        
+        def _sl(v):
+            if v is None: return []
+            if isinstance(v, list): return v
+            return [str(v)]
+        
+        study_data = {
+            "nct_id": nct_id,
+            "title": ps.get("identificationModule", {}).get("briefTitle", ""),
+            "sponsor": ps.get("sponsorCollaboratorsModule", {}).get("leadSponsor", {}).get("name", ""),
+            "status": ps.get("statusModule", {}).get("overallStatus", ""),
+            "phase": _sl(ps.get("designModule", {}).get("phases", [])),
+            "study_type": ps.get("designModule", {}).get("studyType", ""),
+            "conditions": _sl(ps.get("conditionsModule", {}).get("conditions", [])),
+            "interventions": _sl([i.get("name") for i in ps.get("armsInterventionsModule", {}).get("interventions", []) if i.get("name")]),
+            "eligibility_criteria": ps.get("eligibilityModule", {}).get("eligibilityCriteria", ""),
+            "primary_outcomes": _sl([o.get("measure") for o in ps.get("outcomesModule", {}).get("primaryOutcomes", []) if o.get("measure")]),
+            "secondary_outcomes": _sl([o.get("measure") for o in ps.get("outcomesModule", {}).get("secondaryOutcomes", []) if o.get("measure")]),
+            "brief_summary": ps.get("descriptionModule", {}).get("briefSummary", ""),
+            "detailed_description": ps.get("descriptionModule", {}).get("detailedDescription", ""),
+        }
+        current_fps = compute_ct_fingerprints(study_data)
+    except Exception as ex:
+        logger.error(f"Parse error for {nct_id}: {ex}")
+        return {"kpt_id": ct_row[1], "status": "parse_failed", "error": str(ex)}
+    
+    comparison = compare_ct_fingerprints(stored_fps, current_fps)
+    
+    if comparison["integrity_status"] == "verified":
+        db.execute(text("""
+            UPDATE clinical_trials
+            SET last_verified_at = NOW(), integrity_status = 'verified'
+            WHERE kpt_id = :k
+        """), {"k": ct_row[1]})
+        db.commit()
+        return {
+            "kpt_id": ct_row[1], "status": "verified", "verified": True,
+            "zones_checked": ["identity", "protocol", "outcomes", "narrative"],
+        }
+    
+    _log_alteration(
+        db, ct_row[1], "clinical_trials",
+        stored_fps["fp_canonical"], current_fps["fp_canonical"],
+        current_version, current_version + 1,
+        comparison["alteration_type"], response_code, triggered_by
+    )
+    db.execute(text("""
+        UPDATE clinical_trials
+        SET last_verified_at = NOW(),
+            integrity_status = 'altered',
+            previous_hash = :prev,
+            kpl_version = :v
+        WHERE kpt_id = :k
+    """), {"k": ct_row[1], "prev": stored_fps["fp_canonical"], "v": current_version + 1})
+    db.commit()
+    
+    return {
+        "kpt_id": ct_row[1], "status": "altered", "verified": True,
+        "zones_changed": comparison["zones_changed"],
+        "alteration_type": comparison["alteration_type"],
+        "significant": comparison["significant"],
+        "new_version": current_version + 1,
+    }
+
+
+
 def _log_alteration(db, kpt_id, source_type, prev_hash, new_hash, prev_ver, new_ver, alt_type, response_code, triggered_by):
     db.execute(text("""
         INSERT INTO alterations 
