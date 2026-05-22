@@ -119,3 +119,19 @@ def chat_simple(
         estimated_cost_usd=round(cost, 6),
         latency_ms=latency_ms,
     )
+
+
+def stream_text(
+    messages: list[dict],
+    system: str = "",
+    max_tokens: int = 1100,
+):
+    client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    with client.messages.stream(
+        model=MODEL,
+        max_tokens=max_tokens,
+        system=system,
+        messages=messages,
+    ) as stream:
+        for text in stream.text_stream:
+            yield text

@@ -85,6 +85,34 @@ def demo_query(body: DemoQueryRequest, request: Request, db: Session = Depends(g
     return result
 
 
+@router.post("/query/stream")
+def demo_query_stream(body: DemoQueryRequest, request: Request, db: Session = Depends(get_db)):
+    import json as _json
+    ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(ip)
+
+    def event_generator():
+        try:
+            for ev in demo_orchestrator.run_demo_query_stream(db=db, question=body.question):
+                name = ev.get("event", "message")
+                payload = _json.dumps(ev.get("data", {}), default=str)
+                yield f"event: {name}\ndata: {payload}\n\n"
+        except Exception as e:
+            logger.error(f"Stream error: {e}")
+            err = _json.dumps({"message": str(e)})
+            yield f"event: error\ndata: {err}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @router.post("/export")
 def demo_export(body: DemoExportRequest, db: Session = Depends(get_db)):
     matched = None
