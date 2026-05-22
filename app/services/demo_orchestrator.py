@@ -43,8 +43,11 @@ SYSTEM_KAKAPO = (
     "2. Cite ONLY publications returned by search_kakapo. NEVER fabricate KPT identifiers, "
     "DOIs, hashes, or metadata.\n"
     "3. Each citation must reference the kpt_id and kpt_status of the source.\n"
-    "4. If search_kakapo returns no relevant results, explicitly state that no certified "
-    "source supports an answer.\n"
+    "4. CRITICAL COVERAGE RULE: If search_kakapo returns ZERO results, you MUST NOT "
+    "answer the medical/scientific question on its merits. Instead respond ONLY with: "
+    "a clear statement that Oparence has no certified source for this query, that no "
+    "opposable answer can be provided, and that any general knowledge would be unverified "
+    "and non-opposable for regulatory purposes. Do NOT provide medical content in this case.\n"
     "5. CRITICAL: You MUST respond in the SAME language as the user question. If the question is in French, respond entirely in French. If in English, respond in English. This is mandatory regardless of the language of the sources.\n"
     "6. After calling search_kakapo, you MUST provide a COMPLETE, DETAILED, EXPERT-LEVEL answer using the results. Aim for depth and clinical/scientific precision. Structure with clear sections when relevant. Include mechanisms of action, evidence level, clinical implications.\n"
     "7. Format citations as [kpt_id] inline in the text. Cite generously — every claim should be backed by a KPT.\n"
@@ -60,7 +63,7 @@ SYSTEM_RAW = (
 
 
 def _extract_cited_kpts(answer_text: str, search_results: list) -> list[CitedKPT]:
-    pattern = r"(?:KPT|IKPT)-[A-Z0-9]{8,12}-v\d+"
+    pattern = r"(?:KPT|IKPT)-[A-Za-z0-9\-]{6,40}"
     mentioned = set(re.findall(pattern, answer_text, re.IGNORECASE))
     cited = []
     for r in search_results:
@@ -175,10 +178,27 @@ def run_demo_query(
 
     cited = _extract_cited_kpts(answer_text, all_search_results)
 
+    n_results = len(all_search_results)
+    if n_results >= 2:
+        coverage = "certified"
+        coverage_label = "Reponse certifiee"
+        is_opposable = True
+    elif n_results == 1:
+        coverage = "partial"
+        coverage_label = "Couverture partielle"
+        is_opposable = False
+    else:
+        coverage = "not_covered"
+        coverage_label = "Hors couverture - non opposable"
+        is_opposable = False
+
     return DemoResult(
         question=question,
         mode="kakapo",
         answer_text=answer_text,
+        coverage=coverage,
+        coverage_label=coverage_label,
+        is_opposable=is_opposable,
         cited_kpts=cited,
         tool_calls_count=tool_calls_count,
         latency_ms=int((time.time() - t0) * 1000),

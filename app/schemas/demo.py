@@ -22,6 +22,9 @@ class DemoResult(BaseModel):
     question: str
     mode: Literal["kakapo", "raw"]
     answer_text: str
+    coverage: Literal["certified", "partial", "not_covered"] = "not_covered"
+    coverage_label: str = ""
+    is_opposable: bool = False
     cited_kpts: list[CitedKPT]
     tool_calls_count: int
     latency_ms: int
