@@ -49,7 +49,7 @@ SYSTEM_KAKAPO = (
     "opposable answer can be provided, and that any general knowledge would be unverified "
     "and non-opposable for regulatory purposes. Do NOT provide medical content in this case.\n"
     "5. CRITICAL: You MUST respond in the SAME language as the user question. If the question is in French, respond entirely in French. If in English, respond in English. This is mandatory regardless of the language of the sources.\n"
-    "6. After calling search_kakapo, you MUST provide a COMPLETE, DETAILED, EXPERT-LEVEL answer using the results. Aim for depth and clinical/scientific precision. Structure with clear sections when relevant. Include mechanisms of action, evidence level, clinical implications.\n"
+    "6. After calling search_kakapo, provide a focused, well-structured answer using the results. Be substantive but CONCISE - aim for 400-600 words maximum. Use short sections. Prioritize the most important clinical evidence. Do not pad.\n"
     "7. Format citations as [kpt_id] inline in the text. Cite generously — every claim should be backed by a KPT.\n"
     "8. You are NOT a substitute for medical judgment. Remind the user that final "
     "clinical decisions belong to licensed professionals."
@@ -99,7 +99,7 @@ def run_demo_query(
         resp = ac.chat_simple(
             messages=[{"role": "user", "content": question}],
             system=SYSTEM_RAW,
-            max_tokens=2048,
+            max_tokens=1100,
         )
         answer_text = " ".join(
             b["text"] for b in resp.content if isinstance(b, dict) and b.get("type") == "text"
@@ -125,7 +125,7 @@ def run_demo_query(
             max_tok = 512
         else:
             tc = {"type": "none"}
-            max_tok = 2048
+            max_tok = 1100
 
         resp = ac.chat_with_tools(
             messages=messages,
