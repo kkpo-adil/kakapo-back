@@ -219,6 +219,80 @@ def demo_stream(db: Session = Depends(get_db)):
         "total_size": catalog + trials,
     }
 
+@router.get("/kpt/{kpt_id}")
+def demo_kpt_detail(kpt_id: str, db: Session = Depends(get_db)):
+    from sqlalchemy import text as sqlt
+    row = db.execute(sqlt("""
+        SELECT
+            k.kpt_id, k.content_hash, k.version, k.status, k.issued_at,
+            p.id, p.title, p.abstract, p.authors_raw, p.doi,
+            p.institution_raw, p.submitted_at, p.kpt_status, p.source_origin,
+            p.integrity_status, p.last_verified_at,
+            p.fp_identity, p.fp_metadata, p.fp_content, p.fp_references,
+            p.fp_canonical, p.fp_content_length, p.fp_word_count,
+            p.fp_computed_at, p.fp_spec_version,
+            ts.score, ts.is_indexation_score
+        FROM kpts k
+        JOIN publications p ON p.id = k.publication_id
+        LEFT JOIN trust_scores ts ON ts.publication_id = p.id
+        WHERE k.kpt_id = :kid
+        LIMIT 1
+    """), {"kid": kpt_id}).first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="KPT introuvable dans le catalog Oparence.")
+
+    authors_raw = row[8] or ""
+    try:
+        import json as _json
+        parsed = _json.loads(authors_raw) if isinstance(authors_raw, str) and authors_raw.strip().startswith("[") else None
+        authors = parsed if isinstance(parsed, list) else [a.strip() for a in str(authors_raw).split(",") if a.strip()]
+    except Exception:
+        authors = [a.strip() for a in str(authors_raw).split(",") if a.strip()]
+
+    score_val = row[25]
+    is_idx = row[26]
+    trust_score = int(round(score_val * 100)) if score_val is not None and not is_idx else None
+    indexation_score = int(round(score_val * 100)) if score_val is not None and is_idx else None
+
+    has_fp = row[20] is not None
+
+    return {
+        "kpt_id": row[0],
+        "content_hash": row[1],
+        "version": row[2],
+        "status": row[3],
+        "issued_at": row[4].isoformat() if row[4] else None,
+        "publication_id": str(row[5]),
+        "title": row[6],
+        "abstract": (row[7] or "")[:1200] if row[7] else None,
+        "authors": authors[:12],
+        "doi": row[9],
+        "publisher": row[10],
+        "publication_date": row[11].strftime("%Y-%m-%d") if row[11] else None,
+        "kpt_status": row[12],
+        "source_origin": row[13],
+        "trust_score": trust_score,
+        "indexation_score": indexation_score,
+        "integrity_status": row[14],
+        "last_verified_at": row[15].isoformat() if row[15] else None,
+        "fingerprint": {
+            "available": has_fp,
+            "spec_version": row[24],
+            "computed_at": row[23].isoformat() if row[23] else None,
+            "zones": {
+                "identity": row[16],
+                "metadata": row[17],
+                "content": row[18],
+                "references": row[19],
+            },
+            "canonical": row[20],
+            "content_length": row[21],
+            "word_count": row[22],
+        },
+    }
+
+
 @router.get("/integrity/verify/{kpt_id}")
 def integrity_verify(kpt_id: str, db: Session = Depends(get_db)):
     from app.services.integrity_checker import verify_kpt
