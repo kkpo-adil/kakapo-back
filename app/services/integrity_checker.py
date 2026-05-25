@@ -183,10 +183,34 @@ def _verify_ct_canonical(db: Session, ct_row, triggered_by: str) -> dict:
             "phase": _sl(ps.get("designModule", {}).get("phases", [])),
             "study_type": ps.get("designModule", {}).get("studyType", ""),
             "conditions": _sl(ps.get("conditionsModule", {}).get("conditions", [])),
-            "interventions": _sl([i.get("name") for i in ps.get("armsInterventionsModule", {}).get("interventions", []) if i.get("name")]),
+            "interventions": [
+                {
+                    "type": i.get("type", "") or "",
+                    "name": i.get("name", "") or "",
+                    "description": i.get("description", "") or "",
+                }
+                for i in ps.get("armsInterventionsModule", {}).get("interventions", [])
+                if i.get("name")
+            ],
             "eligibility_criteria": ps.get("eligibilityModule", {}).get("eligibilityCriteria", ""),
-            "primary_outcomes": _sl([o.get("measure") for o in ps.get("outcomesModule", {}).get("primaryOutcomes", []) if o.get("measure")]),
-            "secondary_outcomes": _sl([o.get("measure") for o in ps.get("outcomesModule", {}).get("secondaryOutcomes", []) if o.get("measure")]),
+            "primary_outcomes": [
+                {
+                    "measure": o.get("measure", "") or "",
+                    "timeFrame": o.get("timeFrame", "") or "",
+                    "description": o.get("description", "") or "",
+                }
+                for o in ps.get("outcomesModule", {}).get("primaryOutcomes", [])
+                if o.get("measure")
+            ],
+            "secondary_outcomes": [
+                {
+                    "measure": o.get("measure", "") or "",
+                    "timeFrame": o.get("timeFrame", "") or "",
+                    "description": o.get("description", "") or "",
+                }
+                for o in ps.get("outcomesModule", {}).get("secondaryOutcomes", [])
+                if o.get("measure")
+            ],
             "brief_summary": ps.get("descriptionModule", {}).get("briefSummary", ""),
             "detailed_description": ps.get("descriptionModule", {}).get("detailedDescription", ""),
         }
