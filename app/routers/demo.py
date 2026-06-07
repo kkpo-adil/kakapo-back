@@ -211,9 +211,27 @@ def demo_stream(db: Session = Depends(get_db)):
     except Exception:
         catalog = 0
         trials = 0
+    try:
+        source_rows = db.execute(sqlt("""
+            SELECT source, COUNT(*) as n FROM publications
+            WHERE source IS NOT NULL
+            GROUP BY source ORDER BY n DESC LIMIT 10
+        """)).all()
+        sources = [{"source": r[0], "count": int(r[1])} for r in source_rows]
+        total_src = sum(s["count"] for s in sources)
+        for sd in sources:
+            sd["pct"] = round(100 * sd["count"] / total_src) if total_src > 0 else 0
+    except Exception:
+        sources = []
+    try:
+        theme_total = sum(t["count"] for t in themes) if themes else 0
+    except Exception:
+        theme_total = 0
     return {
         "recent": recent,
         "themes": themes,
+        "themes_total": theme_total,
+        "sources": sources,
         "catalog_size": catalog,
         "trials_size": trials,
         "total_size": catalog + trials,
