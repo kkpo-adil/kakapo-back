@@ -174,23 +174,55 @@ def demo_query_result(job_id: str):
 def demo_stream(db: Session = Depends(get_db)):
     from sqlalchemy import text as sqlt
     try:
-        recent_rows = db.execute(sqlt("""
+        recent_ct = db.execute(sqlt("""
             SELECT nct_id, theme, kpt_id, title,
                    EXTRACT(EPOCH FROM (NOW() - ingested_at))::int as secs_ago
             FROM clinical_trials
+            WHERE ingested_at IS NOT NULL
             ORDER BY ingested_at DESC
             LIMIT 5
         """)).all()
-        recent = [
+        ct_items = [
             {
+                "type": "trial",
+                "ref": r[0],
+                "label": r[1] or "other",
                 "nct_id": r[0],
                 "theme": r[1],
                 "kpt_id": r[2],
                 "title": r[3][:60] if r[3] else "",
-                "secs_ago": int(r[4]) if r[4] else 0,
+                "secs_ago": int(r[4]) if r[4] is not None else 0,
             }
-            for r in recent_rows
+            for r in recent_ct
         ]
+        recent_pub = db.execute(sqlt("""
+            SELECT
+                COALESCE(NULLIF(p.doi, ''), p.hal_id, SUBSTRING(p.id::text FROM 1 FOR 18)) as ref,
+                p.source as label,
+                k.kpt_id,
+                p.title,
+                EXTRACT(EPOCH FROM (NOW() - p.created_at))::int as secs_ago
+            FROM publications p
+            JOIN kpts k ON k.publication_id = p.id
+            WHERE p.created_at IS NOT NULL
+              AND p.created_at > NOW() - INTERVAL '7 days'
+            ORDER BY p.created_at DESC
+            LIMIT 5
+        """)).all()
+        pub_items = [
+            {
+                "type": "publication",
+                "ref": r[0] or "",
+                "label": r[1] or "",
+                "nct_id": r[0] or "",
+                "theme": r[1] or "",
+                "kpt_id": r[2],
+                "title": r[3][:60] if r[3] else "",
+                "secs_ago": int(r[4]) if r[4] is not None else 0,
+            }
+            for r in recent_pub
+        ]
+        recent = sorted(ct_items + pub_items, key=lambda x: x["secs_ago"])[:10]
     except Exception:
         recent = []
     try:
