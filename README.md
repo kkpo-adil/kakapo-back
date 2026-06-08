@@ -1,396 +1,358 @@
-# KAKAPO — Scientific Reliability Infrastructure
+# Oparence — Backend & Infrastructure
 
-KAKAPO certifie, relie et score des publications scientifiques via deux briques :
-- **KPT (Proof of Knowledge Token)** — certificat cryptographique non transférable
-- **Trust Engine** — moteur de scoring de fiabilité scientifique
-
----
-
-## Prérequis
-
-- Docker + Docker Compose
-- Python 3.12+ (pour le développement local sans Docker)
+> Trust layer pour les IA en secteurs régulés.
+> Tiers neutre certificateur. Modèle Spotify-de-la-science.
 
 ---
 
-## Lancement avec Docker Compose
+## 1. Vision & Mission
 
-```bash
-# 1. Cloner et entrer dans le projet
-git clone <repo>
-cd kakapo
+Oparence est l'infrastructure de provenance scientifique pour les IA verticales en secteurs régulés (santé, pharma, legal, finance).
 
-# 2. Copier les variables d'environnement
-cp .env.example .env
+**Le problème** : les IA verticales ne peuvent pas garantir elles-mêmes la provenance des sources scientifiques qu'elles utilisent, même avec licenses éditeurs (problème "juge et partie"). EU AI Act et régulateurs sectoriels exigent un audit trail opposable.
 
-# 3. Lancer PostgreSQL + API
-docker compose up --build
+**La solution** : tiers neutre certificateur. Oparence stocke les publications scientifiques (metadata + MeSH + abstract), génère un fingerprint cryptographique multi-zone v1.1, émet un KPT (Knowledge Provenance Token) signé. Les IA streament via API Oparence avec audit trail opposable et détection automatique d'altération/rétraction.
 
-# L'API est disponible sur http://localhost:8000
-# Documentation interactive : http://localhost:8000/docs
-```
+**Modèle économique** : Spotify-de-la-science. Stockage de tout ce qui est légal (PubMed metadata domaine public, PMC OA, bioRxiv, arXiv), pay-per-stream certifié, royalties bilatérales aux éditeurs post-seed.
 
 ---
 
-## Développement local (sans Docker)
+## 2. Architecture technique
 
-```bash
-# 1. Créer un environnement virtuel
-python -m venv .venv
-source .venv/bin/activate  # Windows : .venv\Scripts\activate
+### 2.1 Stack
+- **Backend** : FastAPI, SQLAlchemy 2.0, Pydantic v2, PostgreSQL 16 (Railway)
+- **Frontend** : Next.js 14 App Router, TypeScript, Tailwind CSS
+- **Infrastructure** : EC2 t3.2xlarge (ingestion + workers), Railway (DB prod + backend API), Vercel (frontend)
+- **Crypto** : Ed25519, X.509, SHA-256, fingerprint multi-zone v1.1
 
-# 2. Installer les dépendances
-pip install -r requirements.txt
+### 2.2 Souveraineté
+Phase actuelle : AWS (EC2) + Railway + Vercel + GitHub = juridiction US.
+Phase post-seed : migration OVH (DB + workers EU souverain).
+Phase post-Series A : SecNumCloud certification.
 
-# 3. Configurer l'environnement
-cp .env.example .env
-# Éditer .env avec votre DATABASE_URL PostgreSQL locale
-
-# 4. Lancer l'API
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
----
-
-## Lancer les tests
-
-```bash
-# Depuis la racine du projet (pas besoin de PostgreSQL — SQLite in-memory)
-pip install -r requirements.txt
-pytest -v
-```
-
-Résultat attendu :
-```
-app/tests/test_publications.py .......... PASSED
-app/tests/test_kpt.py ............ PASSED
-app/tests/test_trust.py .......... PASSED
-```
+### 2.3 Stockage
+- Railway PostgreSQL 1 TB (DB prod)
+- EC2 i-0ac3b07c48c308523 (workers ingestion + scripts bulk)
+- Scripts persistants : `/home/ubuntu/`
 
 ---
 
-## Endpoints API
+## 3. Doctrine KPT & Fingerprint v1.1
 
-### Publications
+### 3.1 KPT (Knowledge Provenance Token)
 
-| Méthode | Route | Description |
-|---------|-------|-------------|
-| `POST` | `/publications/upload` | Upload PDF + création Publication + KPT + Trust Score |
-| `GET` | `/publications/` | Lister les publications (pagination, filtre source) |
-| `GET` | `/publications/{id}` | Lire une publication par UUID |
+Identifiant cryptographique unique par publication, format lisible :
+- `KPT-{HASH8}-PUBMED-PMID{pmid}` (PubMed)
+- `KPT-{HASH8}-EPMC-PMC{pmcid}` (EuropePMC)
+- `KPT-{HASH8}-HAL-{halid}` (HAL)
+- `KPT-{HASH8}-CT-{nctid}` (Clinical Trials)
 
-### KPT
+Table `kpts` :
+- `id` (uuid) - clé primaire interne
+- `kpt_id` (varchar) - identifiant lisible
+- `publication_id` (uuid) - FK publications.id (CASCADE)
+- `content_hash` (varchar) - SHA-256 du contenu certifié
+- `version` (int) - version du KPT (1 = initial)
+- `status` (varchar) - 'active', 'retracted', 'altered'
+- `issued_at` (timestamptz) - date émission KPT
+- `metadata_json` (jsonb) - metadata étendues
+- `is_indexed` (bool) - flag indexation OS
 
-| Méthode | Route | Description |
-|---------|-------|-------------|
-| `POST` | `/kpt/issue` | Émettre un KPT manuellement pour une publication existante |
-| `GET` | `/kpt/{kpt_id}` | Lire un KPT par identifiant lisible |
-| `POST` | `/kpt/{kpt_id}/verify` | Vérifier l'intégrité et le statut d'un KPT |
-| `PATCH` | `/kpt/{kpt_id}/status` | Mettre à jour le statut (challenged / revoked / superseded) |
-| `GET` | `/kpt/publication/{pub_id}` | Lister tous les KPT d'une publication |
+### 3.2 Fingerprint multi-zone v1.1
 
-### Trust Engine
+5 zones SHA-256 indépendantes + 1 canonique :
+- `fp_identity` = sha256(DOI + titre + auteurs + journal)
+- `fp_metadata` = sha256(titre + auteurs + journal + année)
+- `fp_content` = sha256(abstract + titre)
+- `fp_references` = sha256(références citées)
+- `fp_canonical` = sha256(fp_identity + fp_metadata + fp_content + fp_references)
 
-| Méthode | Route | Description |
-|---------|-------|-------------|
-| `GET` | `/trust/score/{pub_id}` | Lire le dernier score de fiabilité |
-| `POST` | `/trust/score/{pub_id}` | Recalculer et persister un nouveau score |
-| `GET` | `/trust/history/{pub_id}` | Historique complet des scores |
+Compléments :
+- `fp_content_length`, `fp_word_count` (statistiques contenu)
+- `fp_first_sentence`, `fp_last_sentence` (hash sentinelles)
+- `fp_computed_at` (timestamptz), `fp_spec_version` = 'v1.1'
 
----
-
-## Exemple de flux complet
-
-```bash
-# 1. Uploader un PDF
-curl -X POST http://localhost:8000/publications/upload \
-  -F "file=@paper.pdf" \
-  -F "title=Mon article de recherche" \
-  -F "abstract=Résumé de l'article" \
-  -F "source=arxiv" \
-  -F "doi=10.1234/example.2024.001" \
-  -F 'authors_raw=[{"name": "Alice Dupont", "orcid": "0000-0001-2345-6789"}]' \
-  -F "institution_raw=Sorbonne Université" \
-  -F "submitted_at=2024-01-15T10:00:00" \
-  -F 'orcid_authors=["https://orcid.org/0000-0001-2345-6789"]' \
-  -F "ror_institution=https://ror.org/02en5vm52"
-
-# Réponse : objet Publication avec id, file_hash, etc.
-# Un KPT et un TrustScore sont automatiquement créés.
-
-# 2. Vérifier le KPT
-curl http://localhost:8000/kpt/KPT-XXXXXXXX-v1-YYYYYYYY
-
-# 3. Vérifier l'intégrité du fichier
-curl -X POST "http://localhost:8000/kpt/KPT-XXXXXXXX-v1-YYYYYYYY/verify?verify_file=true"
-
-# 4. Lire le score de fiabilité
-curl http://localhost:8000/trust/score/<publication_id>
-
-# 5. Recalculer le score (après mise à jour des métadonnées)
-curl -X POST http://localhost:8000/trust/score/<publication_id>
-```
+Spec version v1.1 ratifiée le 6 juin 2026.
 
 ---
 
-## Structure du score Trust Engine V1
+## 4. Sources de données certifiées
 
-| Composante | Poids | Critère |
-|------------|-------|---------|
-| `source_score` | 20% | hal/arxiv = 1.0 · direct = 0.5 · other = 0.3 |
-| `completeness_score` | 30% | Présence : titre, résumé, DOI, auteurs, institution |
-| `freshness_score` | 20% | ≤2 ans = 1.0 · décroissance jusqu'à 5 ans = 0.0 |
-| `citation_score` | 15% | DOI présent = 1.0 (proxy V1) |
-| `dataset_score` | 15% | Dataset hash déclaré = 1.0 |
+### 4.1 Sources actives
 
----
+| Source | Volume | Légal | Couverture |
+|--------|--------|-------|------------|
+| PubMed | 36.6M (bulk en cours 8 juin 2026) | Domaine public NLM | Métadonnées + MeSH 100% + abstract 51% |
+| EuropePMC | 113K | Open Access | Métadonnées + abstract |
+| HAL | 80K | CC0 | Métadonnées HAL + plein texte HAL OA |
+| OpenAlex | 6K | Open Access | Métadonnées étendues |
+| arXiv | 27 | Open Access | Préprints physique/info |
+| ClinicalTrials.gov | 153K | Domaine public | Essais cliniques complets |
 
-## Variables d'environnement
-
-| Variable | Défaut | Description |
-|----------|--------|-------------|
-| `DATABASE_URL` | `postgresql://kakapo:kakapo@localhost:5432/kakapo` | URL PostgreSQL |
-| `UPLOAD_DIR` | `./uploads` | Répertoire de stockage des fichiers |
-| `MAX_UPLOAD_SIZE_MB` | `50` | Taille maximale d'upload en MB |
-| `APP_ENV` | `development` | Environnement d'exécution |
+### 4.2 Sources cibles roadmap
+- PMC OA Subset (6.5M full text gratuits) - phase J+7
+- bioRxiv + medRxiv (500K preprints) - phase J+15
+- PLOS + BMC + Frontiers (2M OA) - phase J+30
+- Bilateral deals Elsevier/Wiley/Springer - phase post-seed
 
 ---
 
-## Roadmap V2
+## 5. État DB actuel (snapshot 8 juin 2026 21:17 UTC)
 
-- [ ] Authentification JWT / API keys
-- [ ] Connecteurs HAL et arXiv (import automatique)
-- [ ] Graphe inter-publications Neo4j
-- [ ] Citation score via OpenAlex / Semantic Scholar
-- [ ] Score de reproductibilité (vérification dataset)
-- [ ] Score de contradiction (analyse croisée)
-- [ ] Worker asynchrone pour traitement lourd (ARQ/Celery)
-- [ ] Migrations Alembic
-# force deploy Dim 10 mai 2026 00:30:15 CEST
+### 5.1 Tables principales
+- **publications** : 3,254,179 rows (avant fin bulk PubMed)
+  - `kpt_status='certified'` ou NULL : 402,357 (vraies publications utiles)
+  - `kpt_status='shell'` : 400,000 (coquilles marquées, exclues backend)
+  - reste : ~2.4M coquilles non marquées (exclues par regex backend)
+- **kpts** : 3,223,916 rows (avant fin bulk)
+- **clinical_trials** : 153,379 essais complets
+- **scientific_reviews** : 0 (table jeune)
+- **vo_transactions** : 0 (table jeune, à activer post-seed)
 
-<!-- README v3.2 -->
+### 5.2 Index critiques
+- `uq_publications_pmid` : UNIQUE WHERE pmid IS NOT NULL (ajouté 8 juin 2026 19:18 UTC)
+- `uq_publication_doi_active` : UNIQUE sur DOI actif (existant)
+- Index B-tree sur source, kpt_status, fp_spec_version
 
----
-
-## 17. Frontend deployment workflow
-
-### URL et identifiants
-
-- **URL prod**         : https://oparence-site.vercel.app
-- **Project Vercel**   : `prj_CXtGQozH8IPtNTn87VaqAA20fRnp`
-- **Team Vercel**      : `team_mlX0NPUpUzXYxRIiSeTEjiVw`
-- **Git repo**         : NON CONNECTE (deploiement via Vercel CLI uniquement)
-- **Code source local**: `~/Desktop/KAKAPO/oparence-site/`
-
-### Stack technique
-
-- Next.js 16.2.6 (App Router)
-- React 19.2.6
-- TypeScript 5.4.5
-- Tailwind CSS 3.4.3
-- Turbopack (bundler par defaut)
-
-### Structure du projet
-
-```
-oparence-site/
-├── .env.local                              (variables API : NEXT_PUBLIC_API_URL)
-├── .vercel/                                (config link Vercel)
-├── package.json                            (en racine - IMPERATIF, pas de double-src)
-├── next.config.js
-├── tailwind.config.ts
-├── tsconfig.json
-├── public/
-└── src/
-    ├── app/
-    │   ├── page.tsx                        (HomePage)
-    │   ├── layout.tsx
-    │   ├── demo/page.tsx
-    │   ├── graph/page.tsx
-    │   ├── kpt/[kpt_id]/page.tsx
-    │   ├── publications/page.tsx
-    │   ├── publications/[id]/page.tsx
-    │   └── verify/page.tsx
-    ├── components/
-    │   ├── ui/
-    │   │   ├── OparenceTerminal.tsx        (widget central live, 4 colonnes)
-    │   │   ├── LiveCounter.tsx             (compteurs hero stats)
-    │   │   ├── Badge.tsx
-    │   │   ├── Card.tsx
-    │   │   ├── EmptyState.tsx
-    │   │   ├── ErrorState.tsx
-    │   │   ├── ScoreBar.tsx
-    │   │   ├── ScoreDial.tsx
-    │   │   └── Spinner.tsx
-    │   ├── layout/
-    │   │   ├── Header.tsx
-    │   │   └── Footer.tsx
-    │   ├── brand/
-    │   │   └── OparenceLogo.tsx
-    │   ├── kpt/
-    │   │   ├── KPTPanel.tsx
-    │   │   └── KPTVerifyForm.tsx
-    │   ├── publication/
-    │   │   ├── PublicationCard.tsx
-    │   │   ├── PublicationFilters.tsx
-    │   │   └── PublicationMeta.tsx
-    │   ├── trust/
-    │   │   └── TrustScorePanel.tsx
-    │   └── graph/
-    │       └── RelationsPanel.tsx
-    └── lib/
-        ├── api-client.ts
-        ├── api.ts
-        ├── mock-data.ts
-        └── utils.ts
-```
-
-### Procedure de deploy
-
-```bash
-cd ~/Desktop/KAKAPO/oparence-site
-npx vercel --prod --yes
-```
-
-Le deploy CLI fait :
-1. Build Next.js local (turbopack)
-2. Upload bundle a Vercel
-3. Deploy production
-4. Alias oparence-site.vercel.app
-
-### Recuperation du code source si perdu
-
-Si le dossier local oparence-site est perdu (changement de machine, suppression accidentelle) :
-
-```bash
-mkdir -p ~/Desktop/KAKAPO/oparence-site
-cd ~/Desktop/KAKAPO/oparence-site
-npx vercel link --yes --project oparence-site
-python3 ~/kakapo/scripts/download_vercel_source.py
-```
-
-Le script `scripts/download_vercel_source.py` utilise l'API Vercel `/v6/deployments/{id}/files` pour reconstituer l'arborescence depuis le deploy READY.
-
-### Endpoints backend consommes par le frontend
-
-| Endpoint                      | Frequence polling | Widget consommateur            |
-|-------------------------------|-------------------|--------------------------------|
-| `/demo/stream`                | 8 sec             | OparenceTerminal (4 colonnes)  |
-| `/demo/integrity/summary`     | 12 sec            | Integrity monitoring (col 4)   |
-| `/kakapo/stats`               | 15 sec            | LiveCounter (hero stats)       |
-| `/demo/kpt/{kpt_id}`          | a la demande      | Page detail KPT                |
-
-### Schema de reponse /demo/stream
-
-```json
-{
-  "recent": [
-    {
-      "type": "publication | trial",
-      "ref": "doi or nct_id",
-      "label": "source or theme",
-      "nct_id": "compat backward",
-      "theme": "compat backward",
-      "kpt_id": "KPT-XXX",
-      "title": "string (60 chars max)",
-      "secs_ago": 123
-    }
-  ],
-  "themes": [{"theme": "oncology", "count": 52344, "pct": 34}],
-  "themes_total": 153379,
-  "sources": [{"source": "pubmed", "count": 3022579, "pct": 95}],
-  "catalog_size": 3175343,
-  "trials_size": 153379,
-  "total_size": 3328722
-}
-```
+### 5.3 Foreign keys
+- `kpts.publication_id` → publications (CASCADE)
+- `publication_relations.source_id` → publications (CASCADE)
+- `scientific_reviews.publication_id` → publications (NO ACTION)
+- `trust_scores.publication_id` → publications (CASCADE)
+- `vo_transactions.publication_id` → publications (NO ACTION)
 
 ---
 
-## 18. Journal - 7 juin 2026 (PHASE A + B frontend)
+## 6. Catalog public (post-patch shells 8 juin 2026)
 
-### Backend
+Patch backend `/demo/stream` et stats sources : exclusion des coquilles via regex SQL.
 
-- EPMC ingest patche savepoints + IntegrityError : 0 erreur de cascade, cadence stable ~280-500/min
-- Doctrine KPT certifie cryptographique gravee (abandon distinction i-KPT / KPT-Editorial)
-- `/demo/stream` etendu :
-  - Ajout `sources` (top 10 sources publications avec count + pct)
-  - Ajout `themes_total` (somme des themes pour affichage total)
-  - Merge CT (5) + publications (5) dans `recent`, tries par recence
-  - Nouveaux champs `type`, `ref`, `label` (backward-compatibles avec frontend ancien)
+Catalog visible en prod (avant fin bulk PubMed) :
+- Catalog size : 646,999
+- Trials size : 153,379
+- Total size : 800,378
 
-### Frontend
+Sources :
+- pubmed 446,164 (69%)
+- europepmc 113,791 (18%)
+- hal 80,829 (12%)
+- openalex 6,184 (1%)
+- arxiv 27, direct 3, nature 1
 
-- Code source `oparence-site` recupere via API Vercel `/v6/deployments/{id}/files`
-- Structure normalisee : suppression du faux double-src (cause du crash deploy 25 mai)
-- `OparenceTerminal.tsx` patche :
-  - Renommage widget "Themes distribution" vers "Clinical trials by theme"
-  - Ajout total "153 379 essais indexes" sous le widget themes
-  - Ajout section "Publications by source" dans Catalog Live counters (6 sources)
-  - Differenciation visuelle dans Recent ingestion stream :
-    - Publications : glyph diamant copper, border copper
-    - Trials      : glyph triangle teal, border teal
-  - Footer mis a jour : Spec v1.1 KPT certifie cryptographique
-- 2 deploys production sans erreur (Build 8s + 10s, Ready 23s + 24s)
-
-### Pitch impact
-
-- Le stream "LIVE" affiche maintenant de vraies ingestions actives (EPMC en 1-2 min)
-- Le total 3,3M+ KPTs explicitement decompose par source
-- Le widget themes ne pretend plus etre exhaustif sur les 3M publis (label clarifie)
-- Footer doctrine aligne sur la realite technique du systeme
+Catalog visible attendu APRÈS fin bulk PubMed v4 :
+- Catalog size : ~36,600,000 + 446,164 existants
+- Total certifié : ~37M
 
 ---
 
-## 19. Etat horodate - 7 juin 2026 ~13h CET
+## 7. Bulk PubMed v4 (8 juin 2026)
 
-### Volumes
+### 7.1 Architecture script `bulk_pubmed_ingest_v4.py`
 
-- Publications totales      : 3,175,343
-- Clinical trials totales   : 153,379
-- Total KPTs                : 3,328,722
+Stratégie validée :
+1. SELECT tous les DOI existants en RAM au démarrage (~2.5M DOIs, 50 MB)
+2. Stream download fichier baseline NCBI (HTTP)
+3. Gzip decompress + iterparse lxml
+4. Filter Python : skip si DOI déjà en RAM (set lookup O(1))
+5. Calcul fingerprint v1.1 multi-zone par publication
+6. INSERT batch execute_values 1000 lignes/cmd avec template explicite
+7. RETURNING id pour mapping pub_id → pmid
+8. INSERT KPTs batch execute_values associés
+9. Commit, batch suivant
 
-### Distribution par source
+### 7.2 Schéma INSERT publications
+25 colonnes : id, pmid, title, abstract, doi, source, source_origin, hal_id, authors_raw, institution_raw, submitted_at, kpt_status, mesh_terms_json, keywords_json, fp_identity, fp_metadata, fp_content, fp_references, fp_canonical, fp_content_length, fp_word_count, fp_first_sentence, fp_last_sentence, fp_computed_at, fp_spec_version
 
-| Source       | Count       | Pct  | Fingerprint coverage |
-|--------------|-------------|------|----------------------|
-| pubmed       | 3,022,579   | 95%  | 100%                 |
-| hal          | 80,829      | 3%   | 100%                 |
-| europepmc    | 65,720+     | 2%   | 100% (a l'ingestion) |
-| openalex     | 6,184       | 0%   | 100%                 |
-| arxiv        | 27          | 0%   | 100%                 |
-| direct       | 3           | 0%   | 100%                 |
-| nature       | 1           | 0%   | 100%                 |
+### 7.3 Schéma INSERT KPTs
+8 colonnes : id (uuid), kpt_id (string lisible), publication_id (FK), content_hash, version=1, status='active', issued_at=now(), is_indexed=false
 
-### Distribution themes (clinical trials uniquement)
+### 7.4 Performance validée (test 8 juin 2026 21:09 UTC)
+- 1 fichier (30K publis) en 109.8s
+- Cadence : 273 publis/sec
+- Inserted 27,295 + Skipped 2,307 (DOI déjà existants)
 
-| Theme           | Count   | Pct |
-|-----------------|---------|-----|
-| oncology        | 52,344  | 34% |
-| drug_discovery  | 34,373  | 22% |
-| metabolic       | 26,935  | 18% |
-| neurology       | 23,735  | 15% |
-| cardiology      | 14,362  | 9%  |
-| ai_compliance   | 1,630   | 1%  |
+### 7.5 Lancement 8 workers nohup (8 juin 2026 21:17 UTC)
+- W1 : files 2-153 (PID 176438)
+- W2 : files 154-305 (PID 176440)
+- W3 : files 306-457 (PID 176442)
+- W4 : files 458-609 (PID 176444)
+- W5 : files 610-762 (PID 176446)
+- W6 : files 763-915 (PID 176448)
+- W7 : files 916-1067 (PID 176450)
+- W8 : files 1068-1220 (PID 176452)
 
-### Integrity monitoring
+ETA : 5-8h (fin attendue 2h-5h CET du 9 juin 2026)
+Cible finale : +36.6M publications + 36.6M KPTs PUBMED
 
-- Publications verified : 3,155,356 / 3,175,429 (99.4%)
-- Clinical trials verified : 153,379 / 153,379 (100%)
-- Altered detected : 27
-- Retractions tracked : 0
+---
 
-### Process actifs sur EC2 i-0ac3b07c48c308523 (t3.2xlarge, ip-172-31-29-156)
+## 8. Frontend (oparence-site.vercel.app)
 
-| PID    | Process                       | Cadence              | Log                              |
-|--------|-------------------------------|----------------------|----------------------------------|
-| 149902 | Daemon monitoring             | 1 cycle / heure      | ~/integrity_daemon.log           |
-| 151110 | Backfill loop publications    | 5 min entre cycles   | ~/backfill_pub_loop.log          |
-| 159842 | EPMC massive (12 workers)     | ~280-500 publis/min  | ~/ingest_epmc_massive.log        |
+### 8.1 Architecture
+- Next.js 14 App Router + TypeScript + Tailwind
+- Pas de bibliothèque de composants tierces (esthétique scientifique dark)
+- Mock data fallback (lib/mock-data.ts) si API Railway down
 
-### Backlog non-bloquant
+### 8.2 Pages clés
+- `/` : OparenceTerminal (widget live catalog + sources + themes)
+- Polling /demo/stream toutes les 8 sec
+- Polling /demo/integrity/summary toutes les 12 sec
 
-- [BL01] Stream backend lit publications.created_at, pas ingested_at (coherence a valider)
-- [BL02] PHASE C (classification 13 themes sur 3M publis) : reportee a une session dediee
-- [BL03] Init repo Git pour oparence-site (actuellement non versionne)
-- [BL04] Documenter procedure de rollback frontend (Vercel rollback CLI)
+### 8.3 Phases livrées 8 juin 2026
+- Phase A matin : renommage themes + sources widget
+- Phase B matin : stream live merge CT/publi + diff visuelle
+
+
+---
+
+## 9. Backend Railway (kakapo-back-production.up.railway.app)
+
+### 9.1 Endpoints critiques
+- GET `/demo/stream` : catalog size + sources + recent
+- GET `/demo/integrity/summary` : stats fingerprints + KPTs
+- GET `/demo/health` : statut système (ready_for_demo)
+
+### 9.2 Patch shell exclusion (8 juin 2026 ~16h CET)
+Modification `app/routers/demo.py` :
+- Catalog count : ajout WHERE `(kpt_status IS NULL OR kpt_status != 'shell')` AND NOT (regex coquille)
+- Sources stats : même exclusion sur le GROUP BY source
+
+Effet : catalog public passe de 3,175,343 à 646,999 (honnête).
+
+---
+
+## 10. Daemons & Workers actifs (8 juin 2026)
+
+### 10.1 Backfill loop fingerprints publications
+- Script : `~/backfill_pub_fingerprints.py`
+- Wrapper : `while true; do timeout 600 python3 ...; sleep 60; done`
+- Rôle : recalcul fingerprints v1.1 pour publications EPMC/HAL
+- État : KILLED pendant bulk PubMed (à relancer post-bulk si besoin)
+
+### 10.2 Daemon monitoring intégrité
+- Script inline Python en boucle
+- PID 173096 actif depuis 18:51 UTC
+- Rôle : recrawl_batch toutes les heures (re-fetch + comparaison fp)
+- Détecte altérations + rétractations en temps réel
+
+### 10.3 Bulk PubMed v4 (en cours)
+- 8 workers PIDs 176438-176452
+- Logs : `~/bulk_pubmed_v4_W*.log`
+
+---
+
+## 11. Journal des sessions
+
+### 8 juin 2026 — Bulk PubMed + Patch shells
+
+**Matin (Phase frontend)**
+- 09:00-11:00 : Phase A frontend (renommage themes, sources widget Phase B)
+- 11:00-12:00 : Documentation README v3.2
+
+**Après-midi (Audit + patch backend)**
+- 14:00-15:00 : Découverte du bug "coquilles PubMed" (audit 100 échantillons)
+  - 83% titres format "Journal PMCxxx" (extraction ratée mai 2026)
+  - 0% MeSH sur 3M PubMed avant correction
+- 15:00-16:00 : Tentatives DELETE coquilles (2.6M rows, FK CASCADE)
+  - DELETE batch 50K échec (20 min sans 1 row commit sur Railway)
+  - UPDATE kpt_status='shell' partiel (400K marquées)
+- 16:00-16:30 : DÉCISION pivot vers patch backend
+  - Modification /demo/stream et sources avec exclusion regex
+  - Commit + push Railway auto-deploy
+  - Catalog visible : 3.2M à 647K (honnête)
+
+**Soir (Bulk PubMed v4)**
+- 18:00-19:00 : Définition modèle Spotify-de-la-science
+  - Tiers neutre certificateur (résout "juge et partie")
+  - Stockage de tout ce qui est légal
+  - Pay-per-stream certifié, royalties éditeurs
+- 19:00-19:30 : Migration DB préparatoire
+  - ALTER TABLE publications ADD COLUMN pmid BIGINT
+  - CREATE UNIQUE INDEX uq_publications_pmid
+- 19:30-21:00 : 3 tentatives échec scripts bulk (v1, v2, v3)
+  - v1 : ORM SQLAlchemy + begin_nested (trop lent Railway)
+  - v2 : psycopg2 execute_values atomic (FK violation DOI)
+  - v3 : pre-filter DOI RAM + savepoints par row (tuple index OOB)
+- 21:09 : Script v4 réécriture COMPLETE
+  - parse_article retourne dict {pub_id, pmid, doi, row}
+  - flush_batch() unique pour pub + kpt
+  - templates explicites execute_values
+  - try/except global parse + flush
+- 21:11 : TEST v4 réussi (27,295 publis insérées + KPTs en 1.8 min)
+- 21:17 : Lancement 8 workers nohup pour la nuit
+
+### 6 juin 2026 — Spec v1.1 fingerprint
+- Ratification fingerprint multi-zone v1.1
+- Migration backfill EPMC + HAL
+
+### Mai 2026 — Ingestion massive PubMed v0 (bug retrospectif)
+- Script PubMed v0 esearch minimaliste sans efetch détaillé
+- Résultat : 3M publis "coquilles" titres bidonnés
+- Bug corrigé via patch backend 8 juin 2026
+
+
+---
+
+## 12. Backlog priorité
+
+### Priorité 1 (post-bulk 9 juin matin)
+- [ ] Verifier 8 workers ont fini (~36.6M publis ingérées)
+- [ ] Snapshot DB final
+- [ ] Validation frontend en prod (catalog ~37M)
+- [ ] Update README section 11 (journal post-bulk)
+
+### Priorité 2 (semaine 9 juin)
+- [ ] PMC OA Subset full text (6.5M articles gratuits)
+- [ ] LinkedIn post fierté catalog
+- [ ] Cédric visio démo + ticket angel
+- [ ] Mails Doctrine, Predictice, Mistral, Cohere
+
+### Priorité 3 (semaine 16 juin)
+- [ ] bioRxiv + medRxiv preprints
+- [ ] PLOS + BMC + Frontiers OA
+- [ ] Embeddings vectoriels (RAG sémantique)
+- [ ] Trust scores enrichis multi-signal
+
+### Priorité 4 (post-seed)
+- [ ] Migration OVH (DB + workers)
+- [ ] Deals bilatéraux Elsevier/Wiley/Springer
+- [ ] SOC 2 + ISO 27001 audit
+- [ ] Embauches : senior backend, BD enterprise, legal/compliance, CSM
+
+---
+
+## 13. Sécurité & conformité
+
+- Aucun secret en clair dans le repo (.env gitignored)
+- DATABASE_URL Railway en env vars uniquement
+- HTTPS partout (Vercel + Railway)
+- EU AI Act : audit trail opposable via KPT + fingerprints v1.1
+- GPAI Code of Practice : compatibility tracée
+- C2PA-ready (extension future signature contenus)
+
+
+---
+
+## 14. Format entrée journal
+
+Chaque entrée du journal (section 11) doit suivre :
+
+- Titre : YYYY-MM-DD — Titre court
+- Périodes : matin, après-midi, soir avec horaires HH:MM-HH:MM
+- Actions horodatées avec résultats factuels
+- Décisions structurantes listées
+- État DB post-session documenté
+
+---
+
+## 15. Contacts & accès
+
+- EC2 SSH : `ssh -i ~/.ssh/kakapo-key.pem ubuntu@<ec2-public-ip>`
+- Railway dashboard : projet kakapo-back-production
+- Vercel dashboard : projet oparence-site
+- GitHub repo : privé
+- Domaine prod : oparence.com (Vercel)
+
+---
+
+**Dernière mise à jour : 8 juin 2026 21:25 UTC (post-lancement bulk PubMed v4)**
