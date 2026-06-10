@@ -238,14 +238,27 @@ def demo_stream(db: Session = Depends(get_db)):
     except Exception:
         themes = []
     try:
-        catalog = db.execute(sqlt("SELECT COUNT(*) FROM publications WHERE (kpt_status IS NULL OR kpt_status != 'shell') AND NOT (source='pubmed' AND title ~ '^[A-Z][a-zA-Z\s\.\-]+ PMC\d+$')")).scalar() or 0
+        catalog = db.execute(sqlt("""
+            WITH est AS (
+                SELECT reltuples::bigint AS total
+                FROM pg_class WHERE relname='publications' AND relkind='r'
+            ),
+            shell_count AS (
+                SELECT COUNT(*) AS n
+                FROM publications
+                WHERE kpt_status = 'shell'
+            )
+            SELECT GREATEST(0, est.total - shell_count.n)::bigint AS catalog
+            FROM est, shell_count
+        """)).scalar() or 0
         trials = db.execute(sqlt("SELECT COUNT(*) FROM clinical_trials")).scalar() or 0
     except Exception:
         catalog = 0
         trials = 0
     try:
         source_rows = db.execute(sqlt("""
-            SELECT source, COUNT(*) as n FROM publications
+            SELECT source, (COUNT(*) * 100)::bigint as n 
+            FROM publications TABLESAMPLE SYSTEM(1)
             WHERE source IS NOT NULL
               AND (kpt_status IS NULL OR kpt_status != 'shell')
               AND NOT (source='pubmed' AND title ~ '^[A-Z][a-zA-Z\s\.\-]+ PMC\d+$')
