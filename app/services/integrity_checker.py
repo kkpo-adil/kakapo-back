@@ -324,13 +324,26 @@ def recrawl_batch(db: Session, batch_size: int = 100, max_age_hours: int = 24) -
 def get_integrity_summary(db: Session) -> dict:
     """Summary stats for /demo/integrity-summary endpoint."""
     pub_stats = db.execute(text("""
+        WITH est AS (
+            SELECT reltuples::bigint AS total
+            FROM pg_class WHERE relname='publications' AND relkind='r'
+        ),
+        sample AS (
+            SELECT 
+                COUNT(*) FILTER (WHERE fp_canonical IS NOT NULL)::float / NULLIF(COUNT(*), 0) AS verified_ratio,
+                COUNT(*) FILTER (WHERE integrity_status = 'altered') AS altered_n,
+                COUNT(*) FILTER (WHERE integrity_status = 'retracted') AS retracted_n,
+                COUNT(*)::float / NULLIF(COUNT(*), 0) AS sample_ratio,
+                MAX(fp_computed_at) AS last_check
+            FROM publications TABLESAMPLE SYSTEM(1)
+        )
         SELECT 
-            COUNT(*) FILTER (WHERE fp_canonical IS NOT NULL) AS verified,
-            COUNT(*) FILTER (WHERE integrity_status = 'altered') AS altered,
-            COUNT(*) FILTER (WHERE integrity_status = 'retracted') AS retracted,
-            COUNT(*) FILTER (WHERE fp_canonical IS NULL) AS unverified,
-            MAX(fp_computed_at) AS last_check
-        FROM publications
+            (est.total * COALESCE(sample.verified_ratio, 0))::bigint AS verified,
+            (sample.altered_n * 100)::bigint AS altered,
+            (sample.retracted_n * 100)::bigint AS retracted,
+            (est.total * (1 - COALESCE(sample.verified_ratio, 0)))::bigint AS unverified,
+            sample.last_check AS last_check
+        FROM est, sample
     """)).first()
     
     ct_stats = db.execute(text("""
