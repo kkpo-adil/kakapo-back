@@ -364,4 +364,12 @@ def integrity_recrawl(batch_size: int = 50, db: Session = Depends(get_db)):
 @router.get("/integrity/summary")
 def integrity_summary(db: Session = Depends(get_db)):
     from app.services.integrity_checker import get_integrity_summary
-    return get_integrity_summary(db)
+    try:
+        return get_integrity_summary(db)
+    except Exception:
+        db.rollback()
+        return {
+            "publications": {"verified": 0, "altered": 0, "retracted": 0, "unverified": 0, "last_check": None},
+            "clinical_trials": {"verified": 0, "altered": 0, "retracted": 0, "unverified": 0, "last_check": None},
+            "recent_alterations": []
+        }
