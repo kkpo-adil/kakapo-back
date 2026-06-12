@@ -76,13 +76,22 @@ def demo_query(body: DemoQueryRequest, request: Request, db: Session = Depends(g
         logger.info(f"Cache hit for question: {body.question[:50]}")
         return _cache[key]
 
-    result = demo_orchestrator.run_demo_query(
-        db=db,
-        question=body.question,
-        with_kakapo=body.with_kakapo,
-    )
-    _cache[key] = result
-    return result
+    try:
+        result = demo_orchestrator.run_demo_query(
+            db=db,
+            question=body.question,
+            with_kakapo=body.with_kakapo,
+        )
+        _cache[key] = result
+        return result
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logger.error(f"demo_query failed: {e}")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Search temporarily unavailable. Please retry in a few seconds.")
 
 
 @router.post("/query/stream")
