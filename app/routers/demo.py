@@ -224,6 +224,7 @@ def demo_stream(db: Session = Depends(get_db)):
         ]
         recent = sorted(ct_items + pub_items, key=lambda x: x["secs_ago"])[:10]
     except Exception:
+        db.rollback()
         recent = []
     try:
         theme_rows = db.execute(sqlt("""
@@ -236,11 +237,13 @@ def demo_stream(db: Session = Depends(get_db)):
         for t in themes:
             t["pct"] = round(100 * t["count"] / total) if total > 0 else 0
     except Exception:
+        db.rollback()
         themes = []
     try:
         catalog = db.execute(sqlt("SELECT reltuples::bigint FROM pg_class WHERE relname='publications' AND relkind='r'")).scalar() or 0
         trials = db.execute(sqlt("SELECT COUNT(*) FROM clinical_trials")).scalar() or 0
     except Exception:
+        db.rollback()
         catalog = 0
         trials = 0
     try:
@@ -256,6 +259,7 @@ def demo_stream(db: Session = Depends(get_db)):
         for sd in sources:
             sd["pct"] = round(100 * sd["count"] / total_src) if total_src > 0 else 0
     except Exception:
+        db.rollback()
         sources = []
     try:
         theme_total = sum(t["count"] for t in themes) if themes else 0
