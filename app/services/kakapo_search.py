@@ -75,24 +75,13 @@ def search(
             "limit": limit,
         }).fetchall()
     except Exception as e:
-        logger.error(f"Full text search failed: {e} — falling back to ilike")
-        q = db.query(Publication, KPT, TrustScore).join(
-            KPT, KPT.publication_id == Publication.id
-        ).outerjoin(
-            TrustScore, TrustScore.publication_id == Publication.id
-        ).filter(Publication.opted_out_at.is_(None))
-        if kpt_status_filter != "all":
-            q = q.filter(Publication.kpt_status == kpt_status_filter)
-        terms = query.strip().split()
-        for term in terms[:3]:
-            q = q.filter(or_(
-                Publication.title.ilike(f"%{term}%"),
-                Publication.abstract.ilike(f"%{term}%"),
-            ))
-        q = q.order_by(
-            (Publication.kpt_status == "certified").desc(),
-        ).limit(limit)
-        orm_rows = q.all()
+        logger.error(f"Full text search failed: {e} - returning empty (no ilike fallback on 14M rows)")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return []
+        orm_rows = []
         results = []
         for pub, kpt, ts in orm_rows:
             authors_raw = pub.authors_raw or ""
