@@ -465,3 +465,66 @@ Raison : Claude.ai ne peut pas tester en local docker-compose ni
 executer de suite de tests. Un humain qui teste AVANT push evite les
 regressions que cette session a connues.
 
+
+---
+
+## 17. Refonte frontend façon ZeroEntropy (12 juin 2026, soirée)
+
+### Contexte
+Suite à la stabilisation backend (section 16), refonte commerciale du
+site oparence.com inspirée de zeroentropy.dev : rassurer par des
+chiffres durs + preuve d'intégration + conformité, plutôt que par un
+live stream fragile.
+
+### Chiffres corrigés sur le site (post-ANALYZE)
+- "3M+" / "14,2M" -> "35,6M+" publications (vrai chiffre)
+- "5 bases" -> "6 bases" (PubMed, EuropePMC, HAL, OpenAlex, ClinicalTrials, Crossref)
+- Date EU AI Act "Août 2026" RETIREE (repoussée par Digital Omnibus,
+  délais high-risk vers 2027-2028). Remplacée par "En vigueur" / angle intemporel.
+- "Chine" retirée des phrases de vente (hasardeux pour pitch FR/EU).
+
+### Modifications page.tsx (déployées, vérifiées dans le HTML servi)
+- Hero : positionnement "certifie la provenance et l'intégrité...
+  Tiers neutre certificateur. Audit trail opposable" (Layer 1 respecté).
+- Barre métriques sous hero : 35,6M · 32,7M · <500ms · SHA-256 multi-zone.
+- CTA hero : "Tester la recherche certifiée" (retiré "live").
+- Ticker animé TICKER_STREAMS SUPPRIME (gadget) -> barre métriques statique.
+- "12 mois" x2 -> angle intemporel ("La fenêtre d'accès se referme").
+- TERMINAL LIVE (OparenceTerminal) SUPPRIME de la home -> remplacé par
+  bloc STATIQUE 2 cartes : (1) requête certifiée figée (SGLT2 ->
+  certified · 5 sources · 0.4s · KPT · SHA-256 · audit opposable),
+  (2) snippet API Python. S'affiche instantanément, ne charge jamais,
+  ne casse jamais. C'est la correction clé : plus aucun "Loading..."
+  ni polling sur la home.
+- NOUVEAU bloc Pricing "06 · Accès" : 3 tiers (API / Souverain /
+  Enterprise) + bandeau conformité (SHA-256 · Audit trail EU AI Act ·
+  eIDAS QTSP · Souveraineté EU). Section démo renumérotée 07.
+
+### Autres fichiers
+- Footer.tsx : OPARENCE.IO -> OPARENCE.COM.
+- demo/page.tsx : wording HORS COUVERTURE raccourci et valorisé
+  ("l'absence de couverture est elle-même une garantie d'intégrité").
+- OparenceTerminal.tsx : composant n'est PLUS importé par la home
+  (le fichier existe encore mais n'est plus monté). A supprimer
+  proprement lors d'un nettoyage futur si confirmé inutilisé ailleurs.
+
+### Backend : AUCUNE modification ce soir
+Les endpoints /demo/stream, /demo/integrity/summary, themes existent
+toujours mais ne sont PLUS appelés par la home (terminal supprimé).
+Décision : NE PAS les supprimer à chaud sans tests. Le frontend ne les
+poll plus -> plus de charge, plus de zombies. Nettoyage éventuel des
+endpoints à faire À FROID avec le dev senior (cf. reco section 16),
+en vérifiant qu'aucune dépendance cachée ne casse /demo/query.
+
+### Doctrine respectée
+STOP PATCH LIVE appliquée toute la soirée : npx tsc --noEmit validé
+AVANT chaque git push frontend. Zéro crash sur la session frontend
+(vs 4 crashs backend le matin avant application de la doctrine).
+
+### Journal
+2026-06-12 (soirée) — Refonte frontend ZeroEntropy-style. Chiffres
+corrigés (35,6M, 6 bases). Dates EU AI Act périmées retirées. Terminal
+live fragile remplacé par bloc statique preuve+API. Bloc Pricing 3
+tiers ajouté. Footer .COM. Backend inchangé (endpoints stream dormants,
+nettoyage reporté au dev senior). Site montrable à un investisseur.
+
