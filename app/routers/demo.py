@@ -245,10 +245,9 @@ def demo_stream(db: Session = Depends(get_db)):
         trials = 0
     try:
         source_rows = db.execute(sqlt("""
-            SELECT source, COUNT(*) as n FROM publications
+            SELECT source, (COUNT(*) * 100)::bigint as n
+            FROM publications TABLESAMPLE SYSTEM(1)
             WHERE source IS NOT NULL
-              AND (kpt_status IS NULL OR kpt_status != 'shell')
-              AND NOT (source='pubmed' AND title ~ '^[A-Z][a-zA-Z\s\.\-]+ PMC\d+$')
             GROUP BY source ORDER BY n DESC LIMIT 10
         """)).all()
         sources = [{"source": r[0], "count": int(r[1])} for r in source_rows]
