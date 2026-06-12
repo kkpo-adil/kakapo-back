@@ -238,7 +238,7 @@ def demo_stream(db: Session = Depends(get_db)):
     except Exception:
         themes = []
     try:
-        catalog = db.execute(sqlt("SELECT COUNT(*) FROM publications WHERE (kpt_status IS NULL OR kpt_status != 'shell') AND NOT (source='pubmed' AND title ~ '^[A-Z][a-zA-Z\s\.\-]+ PMC\d+$')")).scalar() or 0
+        catalog = db.execute(sqlt("SELECT reltuples::bigint FROM pg_class WHERE relname='publications' AND relkind='r'")).scalar() or 0
         trials = db.execute(sqlt("SELECT COUNT(*) FROM clinical_trials")).scalar() or 0
     except Exception:
         catalog = 0
