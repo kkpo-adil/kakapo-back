@@ -77,6 +77,11 @@ def demo_query(body: DemoQueryRequest, request: Request, db: Session = Depends(g
         return _cache[key]
 
     try:
+        db.rollback()
+    except Exception:
+        pass
+
+    try:
         result = demo_orchestrator.run_demo_query(
             db=db,
             question=body.question,
