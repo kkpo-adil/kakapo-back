@@ -356,3 +356,112 @@ Chaque entrée du journal (section 11) doit suivre :
 ---
 
 **Dernière mise à jour : 8 juin 2026 21:25 UTC (post-lancement bulk PubMed v4)**
+
+---
+
+## 16. Post-mortem stabilisation backend demo (12 juin 2026)
+
+### Symptome initial
+/demo/stream, /demo/query, /demo/integrity/summary en 502 / timeout.
+La demo affichait du SQL brut PostgreSQL aux utilisateurs.
+Compteur catalog affichait 14,2M alors que la base contient 35,6M.
+
+### 4 bugs racines identifies
+
+**BUG 1 - Absence de db.rollback() dans les except (demo.py)**
+Quand une query crash (DiskFull shared_memory sur 35M rows), la
+transaction SQLAlchemy passe en etat "aborted". Sans rollback, toutes
+les queries suivantes de la meme session recoivent "current transaction
+is aborted, commands ignored until end of transaction block".
+FIX : db.rollback() dans chaque except + rollback preventif en debut
+de /demo/query.
+
+**BUG 2 - Polling frontend agressif sans garde-fous (OparenceTerminal.tsx)**
+setInterval 8s/12s avec fetch SANS AbortController, SANS timeout, SANS
+skip-si-deja-en-cours, SANS backoff. Chaque navigateur ouvert bombardait
+le backend. Les queries lentes s'empilaient en zombies PostgreSQL
+(jusqu'a 31 connexions actives stuck pendant 3h+).
+FIX : AbortController timeout 6s, skip si fetch en cours, backoff
+exponentiel sur erreur, frequence 30s/60s au lieu de 8s/12s.
+
+**BUG 3 - Fallback ILIKE sur 35M rows (kakapo_search.py)**
+Quand la query tsvector echouait, le code basculait sur un fallback
+ORM .ilike() qui scanne sequentiellement 35M rows = hang infini.
+C'est ce fallback qui ressortait le SQL brut.
+FIX : suppression du fallback, return [] propre + rollback.
+
+**BUG 4 - Statistiques PostgreSQL perimees (pg_class.reltuples)**
+Le compteur affichait 14,226,565 alors que la table contient 35,626,416
+rows. Le bulk PubMed v4 avait insere +21M rows sans qu'un ANALYZE soit
+lance. pg_class.reltuples = estimation perimee.
+FIX : ANALYZE publications (25s) -> reltuples corrige a 35,626,416.
+
+### Chiffres reels confirmes (post-ANALYZE 12 juin)
+- Publications : 35,626,416 (et NON 14,2M)
+- Dont certified : ~32,7M (92%)
+- Dont indexed : ~2,4M (7%)
+- Dont shell : ~0,4M (1%)
+- KPTs : 35,3M (ratio 1.00 par publication, aucun doublon)
+- Abstract present : ~61% des publications
+- Index GIN full-text : idx_pub_fulltext_en (present, fonctionnel)
+- Query "machine & learning & sepsis" : 626 matches en 0.4s (OK)
+
+### REGLES PERMANENTES - ne plus retomber dans ces travers
+
+R1. JAMAIS de query metier lourde (COUNT, GROUP BY, regex, ILIKE) sur
+    la table publications (35M) sans : soit pg_class.reltuples
+    (estimation instantanee), soit TABLESAMPLE SYSTEM(n), soit index
+    dedie + LIMIT. JAMAIS de COUNT(*) brut, title ~ regex, ou ILIKE
+    sans index.
+
+R2. TOUJOURS db.rollback() dans chaque except entourant un db.execute().
+    Pattern obligatoire :
+        try: result = db.execute(...)
+        except Exception: db.rollback(); result = fallback
+
+R3. /demo/health et endpoints de monitoring NE FONT JAMAIS de query
+    metier. SELECT 1 maximum.
+
+R4. Tout polling frontend DOIT avoir : AbortController + timeout,
+    skip-si-en-cours, backoff exponentiel. Frequence minimale 30s.
+    JAMAIS de setInterval + fetch nu.
+
+R5. Apres TOUT bulk d'ingestion massif : lancer ANALYZE sur les tables
+    touchees AVANT de se fier aux compteurs (pg_class.reltuples).
+
+R6. STOP PATCH LIVE. Avant chaque git push backend :
+    - tester en local (Mac venv connecte a la DB Railway en lecture)
+    - verifier le git diff manuellement
+    - prevoir le git revert en cas de crash
+    Doctrine violee 4x le 12 juin = 4 crashs prod. Ne plus jamais.
+
+R7. AVANT de debugger le code : verifier pg_stat_activity (queries
+    zombie) AVANT de toucher au code. Le bug peut etre des connexions
+    stuck, pas le code lui-meme. Commande :
+    SELECT pid, state, EXTRACT(EPOCH FROM (NOW()-query_start)) as dur
+    FROM pg_stat_activity WHERE state='active' ORDER BY query_start;
+
+### Commits de la session (kakapo-back)
+- cae85e8 fix(demo): pg_class.reltuples pour catalog
+- (rollback x4 dans demo_stream except blocks)
+- (try/except + rollback /demo/integrity/summary)
+- 2d3995f fix(demo): wrap /demo/query + clean 503
+- c7c2abf fix(demo): rollback preventif avant query
+- (kakapo_search: suppression fallback ILIKE)
+- ANALYZE publications (manuel, a automatiser post-ingestion)
+
+### RECOMMANDATION CRITIQUE - faire valider par un dev senior
+Les patches du 12 juin ont stabilise la demo mais ont ete appliques en
+urgence SANS tests automatises ni revue de code. AVANT le pitch
+investisseur (Jean de La Rochebrochard / New Wave) ou un premier contrat
+enterprise, faire auditer par un dev FastAPI/PostgreSQL senior
+(Malt/Comet, ~200-400 EUR / 2-3h) :
+- valider les 4 patches (rollback, polling, suppression fallback, ANALYZE)
+- mettre en place statement_timeout cote PostgreSQL (garde-fou anti-zombie)
+- ecrire des smoke tests pytest sur /demo/*
+- automatiser ANALYZE dans le pipeline d'ingestion
+- ajouter un index sur les colonnes de recherche frequentes si besoin
+Raison : Claude.ai ne peut pas tester en local docker-compose ni
+executer de suite de tests. Un humain qui teste AVANT push evite les
+regressions que cette session a connues.
+
