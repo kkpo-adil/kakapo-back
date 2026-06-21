@@ -44,28 +44,34 @@ def search(
     tsquery = " & ".join(query.strip().split()[:5])
 
     sql = text("""
+        WITH hits AS (
+            SELECT
+                p.id, p.title, p.abstract, p.authors_raw, p.doi,
+                p.institution_raw, p.submitted_at, p.kpt_status,
+                p.source_origin, p.hal_id
+            FROM publications p
+            WHERE p.opted_out_at IS NULL
+            AND (:status_filter = 'all' OR p.kpt_status = :status_filter)
+            AND to_tsvector('english', coalesce(p.title,'') || ' ' || coalesce(p.abstract,''))
+                @@ to_tsquery('english', :tsquery)
+            ORDER BY
+                (p.kpt_status = 'certified') DESC,
+                p.submitted_at DESC NULLS LAST
+            LIMIT :limit
+        )
         SELECT
-            p.id, p.title, p.abstract, p.authors_raw, p.doi,
-            p.institution_raw, p.submitted_at, p.kpt_status,
-            p.source_origin, p.hal_id,
+            h.id, h.title, h.abstract, h.authors_raw, h.doi,
+            h.institution_raw, h.submitted_at, h.kpt_status,
+            h.source_origin, h.hal_id,
             k.kpt_id, k.content_hash,
             ts.score, ts.is_indexation_score,
-            ts_rank(
-                to_tsvector('english', coalesce(p.title,'') || ' ' || coalesce(p.abstract,'')),
-                to_tsquery('english', :tsquery)
-            ) as rank
-        FROM publications p
-        JOIN kpts k ON k.publication_id = p.id
-        LEFT JOIN trust_scores ts ON ts.publication_id = p.id
-        WHERE p.opted_out_at IS NULL
-        AND (:status_filter = 'all' OR p.kpt_status = :status_filter)
-        AND to_tsvector('english', coalesce(p.title,'') || ' ' || coalesce(p.abstract,''))
-            @@ to_tsquery('english', :tsquery)
+            0.0 as rank
+        FROM hits h
+        JOIN kpts k ON k.publication_id = h.id
+        LEFT JOIN trust_scores ts ON ts.publication_id = h.id
         ORDER BY
-            (p.kpt_status = 'certified') DESC,
-            rank DESC,
-            ts.score DESC NULLS LAST
-        LIMIT :limit
+            (h.kpt_status = 'certified') DESC,
+            h.submitted_at DESC NULLS LAST
     """)
 
     try:
