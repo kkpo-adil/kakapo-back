@@ -54,9 +54,6 @@ def search(
             AND (:status_filter = 'all' OR p.kpt_status = :status_filter)
             AND to_tsvector('english', coalesce(p.title,'') || ' ' || coalesce(p.abstract,''))
                 @@ to_tsquery('english', :tsquery)
-            ORDER BY
-                (p.kpt_status = 'certified') DESC,
-                p.submitted_at DESC NULLS LAST
             LIMIT :limit
         )
         SELECT
