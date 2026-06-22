@@ -7,7 +7,13 @@ def _make_engine():
     url = settings.DATABASE_URL
     if url.startswith("sqlite"):
         return create_engine(url, connect_args={"check_same_thread": False})
-    return create_engine(url, pool_pre_ping=True, pool_size=10, max_overflow=20)
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_size=10,
+        max_overflow=20,
+        connect_args={"options": "-c statement_timeout=30000"},
+    )
 
 
 engine = _make_engine()
