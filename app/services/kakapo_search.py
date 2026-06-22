@@ -67,7 +67,7 @@ def search(
             ts.score, ts.is_indexation_score,
             0.0 as rank
         FROM hits h
-        JOIN kpts k ON k.publication_id = h.id
+        LEFT JOIN kpts k ON k.publication_id = h.id
         LEFT JOIN trust_scores ts ON ts.publication_id = h.id
         ORDER BY
             (h.kpt_status = 'certified') DESC,
